@@ -313,7 +313,18 @@ def init_state() -> None:
     st.session_state.setdefault("login_error", "")
 
 
-def resolve_secret(env_key: str, section: str, key: str, fallback: str) -> str:
+def has_non_whitespace_content(value: object | None) -> bool:
+    if value is None:
+        return False
+    return str(value).strip() != ""
+
+
+def resolve_secret(
+    env_key: str,
+    section: str,
+    key: str,
+    fallback: str | None,
+) -> str:
     """Resolve secrets with environment variables taking priority.
 
     Args:
@@ -326,21 +337,28 @@ def resolve_secret(env_key: str, section: str, key: str, fallback: str) -> str:
         The resolved secret value based on env → secrets → fallback precedence.
     """
     env_value = os.getenv(env_key)
-    if env_value:
-        return env_value
+    if has_non_whitespace_content(env_value):
+        return str(env_value)
     try:
         section_data = st.secrets.get(section) or {}
-        return section_data.get(key, fallback)
+        value = section_data.get(key, fallback)
+        if value is None:
+            return ""
+        return value if isinstance(value, str) else str(value)
     except (AttributeError, KeyError, TypeError, StreamlitSecretNotFoundError):
-        return fallback
+        if fallback is None:
+            return ""
+        return fallback if isinstance(fallback, str) else str(fallback)
 
 
 def is_secret_configured(env_key: str, section: str, key: str) -> bool:
-    if os.getenv(env_key):
+    env_value = os.getenv(env_key)
+    if has_non_whitespace_content(env_value):
         return True
     try:
         section_data = st.secrets.get(section) or {}
-        return key in section_data
+        value = section_data.get(key)
+        return has_non_whitespace_content(value)
     except (AttributeError, KeyError, TypeError, StreamlitSecretNotFoundError):
         return False
 
@@ -357,34 +375,50 @@ def login_view() -> None:
         unsafe_allow_html=True,
     )
 
-    auth_user = resolve_secret(
-        "MULTIPLEX_AUTH_USER",
-        "auth",
-        "user",
-        DEMO_USER,
-    )
-    auth_password = resolve_secret(
+    demo_mode_enabled = os.getenv("MULTIPLEX_ENABLE_DEMO_MODE", "false").lower() == "true"
+    user_configured = is_secret_configured("MULTIPLEX_AUTH_USER", "auth", "user")
+    password_configured = is_secret_configured(
         "MULTIPLEX_AUTH_PASSWORD",
         "auth",
         "password",
-        DEMO_PASSWORD,
     )
-    auth_configured = (
-        is_secret_configured("MULTIPLEX_AUTH_USER", "auth", "user")
-        and is_secret_configured("MULTIPLEX_AUTH_PASSWORD", "auth", "password")
-    )
-    demo_mode_enabled = os.getenv("MULTIPLEX_ENABLE_DEMO_MODE", "false").lower() == "true"
+    if user_configured != password_configured:
+        st.error(
+            "Partial authentication configuration detected. Configure both "
+            "MULTIPLEX_AUTH_USER and MULTIPLEX_AUTH_PASSWORD (or corresponding "
+            "Streamlit secrets), or enable demo mode by setting "
+            "MULTIPLEX_ENABLE_DEMO_MODE=true (case-insensitive)."
+        )
+        st.stop()
+
+    auth_configured = user_configured and password_configured
     if not auth_configured and not demo_mode_enabled:
         st.error(
             "Demo mode is disabled. Configure MULTIPLEX_AUTH_USER/"
             "MULTIPLEX_AUTH_PASSWORD or Streamlit secrets to continue."
         )
         st.stop()
+
     demo_mode = demo_mode_enabled and not auth_configured
     if demo_mode:
+        auth_user = DEMO_USER
+        auth_password = DEMO_PASSWORD
         st.warning(
             "Demo credentials are active. Configure MULTIPLEX_AUTH_USER/"
             "MULTIPLEX_AUTH_PASSWORD or Streamlit secrets before production."
+        )
+    else:
+        auth_user = resolve_secret(
+            "MULTIPLEX_AUTH_USER",
+            "auth",
+            "user",
+            None,
+        )
+        auth_password = resolve_secret(
+            "MULTIPLEX_AUTH_PASSWORD",
+            "auth",
+            "password",
+            None,
         )
     query_params = getattr(st, "query_params", {})
     auto_login_value = query_params.get("autologin", "false")
@@ -408,29 +442,20 @@ def login_view() -> None:
         else:
             st.session_state.login_error = "Invalid credentials. Please try again."
 
-    st.text_input(
-        "User ID",
-        value=st.session_state.username,
-        key="login_user",
-    )
-    st.text_input(
-        "Password",
-        type="password",
-        key="login_password",
-    )
-    st.button("Unlock dashboard", on_click=handle_login)
-
-    if (
-        not st.session_state.authenticated
-        and secrets.compare_digest(st.session_state.get("login_user", ""), auth_user)
-        and secrets.compare_digest(
-            st.session_state.get("login_password", ""),
-            auth_password,
+    with st.form("login_form"):
+        st.text_input(
+            "User ID",
+            value=st.session_state.username,
+            key="login_user",
         )
-    ):
-        st.session_state.authenticated = True
-        st.session_state.username = st.session_state.get("login_user", "")
-        st.session_state.login_error = ""
+        st.text_input(
+            "Password",
+            type="password",
+            key="login_password",
+        )
+        submitted = st.form_submit_button("Unlock dashboard")
+        if submitted:
+            handle_login()
 
     if st.session_state.authenticated:
         st.rerun()
@@ -438,7 +463,10 @@ def login_view() -> None:
     if st.session_state.login_error:
         st.error(st.session_state.login_error)
 
-    st.caption("OAuth-style access gate for demo. Replace with production OAuth.")
+    st.caption(
+        "Basic username/password access gate (demo-friendly). Replace with a "
+        "production-grade auth mechanism (e.g., OAuth/SSO)."
+    )
 
 
 def build_metrics() -> Iterable[MetricCard]:
@@ -481,6 +509,7 @@ def render_line_chart(
     ax.set_xlabel("", color="#94a3b8")
     ax.set_ylabel("", color="#94a3b8")
     st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
 
 
 def render_allocation_chart() -> None:
@@ -493,6 +522,7 @@ def render_allocation_chart() -> None:
     ax.set_facecolor("#0b1220")
     fig.patch.set_facecolor("#0b1220")
     st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
 
 
 def send_telegram_notification(token: str, chat_id: str, message: str) -> str:
