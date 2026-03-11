@@ -238,8 +238,8 @@ class TestTimeframeFuser:
         assert decision.direction == 0
 
     def test_fuse_zero_weight_layers_returns_neutral(self):
-        from app.evaluation.timeframe_fusion import TimeframeFuser, TimeframeLayer
         """Zero-weight layers must not cause a ZeroDivisionError."""
+        from app.evaluation.timeframe_fusion import TimeframeFuser, TimeframeLayer
         sig = Signal(1.0, "1d", +1, confidence=0.9)
         layers = [TimeframeLayer("1d", [], weight=0.0, last_signal=sig)]
         decision = TimeframeFuser().fuse(layers)

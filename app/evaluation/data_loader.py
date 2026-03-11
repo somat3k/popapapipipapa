@@ -74,6 +74,10 @@ _SUPPORTED_TIMEFRAMES: Tuple[str, ...] = ("1h", "4h", "1d")
 # Delay between successive CoinGecko API requests to stay within rate limits
 _API_RATE_LIMIT_DELAY = 0.10  # seconds
 
+# Minimum number of resampled output bars to guarantee when generating
+# synthetic data for a given timeframe (ensures at least a useful dataset).
+_MIN_SYNTHETIC_OUTPUT_BARS = 10
+
 # Resample factors: how many base daily bars to aggregate per output bar.
 # 1d → 1 (no resampling), 4h → 4 bars/day proxy, 1h → 24 bars/day proxy.
 _TF_RESAMPLE_FACTOR: Dict[str, int] = {
@@ -183,7 +187,7 @@ class OHLCVLoader:
         """Generate synthetic bars and resample to *timeframe*."""
         # Generate enough daily bars to produce a reasonable output length
         factor = _TF_RESAMPLE_FACTOR.get(timeframe, 1)
-        n_daily = max(days, factor * 10)  # at least 10 output bars
+        n_daily = max(days, factor * _MIN_SYNTHETIC_OUTPUT_BARS)
         daily = self.generate_synthetic(n=n_daily, symbol=symbol)
         return self._resample_to_timeframe(daily, timeframe)
 

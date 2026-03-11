@@ -64,6 +64,9 @@ HF_DANGER = 1.0      # HF below this → emergency full repay
 # Borrow utilisation as a fraction of max LTV when entering a position
 DEFAULT_BORROW_RATIO = 0.50   # borrow at 50% of LLTV (the "÷2" in 1/2=3)
 
+# Small epsilon added to denominators to prevent division-by-zero in net_apy
+_EPSILON_USD = 1e-12
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -409,7 +412,7 @@ class HalfHalfThreeStrategy:
             # net_apy: weighted average annual yield rate (dimensionless fraction).
             # = supply_apy × collateral_weight − borrow_apy × borrow_weight
             # where weights are proportional to each side's USD value.
-            total_usd = collateral_usd + borrow_usd + 1e-12
+            total_usd = collateral_usd + borrow_usd + _EPSILON_USD
             net_apy = (
                 supply_apy * collateral_usd - borrow_apy * borrow_usd
             ) / total_usd
