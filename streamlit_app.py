@@ -2,14 +2,27 @@
 """Streamlit dashboard for Multiplex Financials."""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import logging
+import secrets
 from typing import Iterable
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
+
+logger = logging.getLogger(__name__)
+
+DEMO_SEED = 42
+# Demo credentials are intentionally weak and only used when demo mode is enabled.
+DEMO_USER = "1"
+DEMO_PASSWORD = "qwerty"
+TELEGRAM_REQUEST_TIMEOUT = 10
 
 
 @dataclass(frozen=True)
@@ -168,6 +181,38 @@ def init_state() -> None:
     st.session_state.setdefault("login_error", "")
 
 
+def resolve_secret(env_key: str, section: str, key: str, fallback: str) -> str:
+    """Resolve secrets with environment variables taking priority.
+
+    Args:
+        env_key: Environment variable name to check first.
+        section: Streamlit secrets section name.
+        key: Key within the Streamlit secrets section.
+        fallback: Value to return when no secrets are configured.
+
+    Returns:
+        The resolved secret value based on env → secrets → fallback precedence.
+    """
+    env_value = os.getenv(env_key)
+    if env_value:
+        return env_value
+    try:
+        section_data = st.secrets.get(section) or {}
+        return section_data.get(key, fallback)
+    except (AttributeError, KeyError, TypeError, StreamlitSecretNotFoundError):
+        return fallback
+
+
+def is_secret_configured(env_key: str, section: str, key: str) -> bool:
+    if os.getenv(env_key):
+        return True
+    try:
+        section_data = st.secrets.get(section) or {}
+        return key in section_data
+    except (AttributeError, KeyError, TypeError, StreamlitSecretNotFoundError):
+        return False
+
+
 def login_view() -> None:
     st.markdown(
         """
@@ -180,19 +225,83 @@ def login_view() -> None:
         unsafe_allow_html=True,
     )
 
-    with st.form("login-form"):
-        username = st.text_input("User ID", value=st.session_state.username)
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Unlock dashboard")
+    auth_user = resolve_secret(
+        "MULTIPLEX_AUTH_USER",
+        "auth",
+        "user",
+        DEMO_USER,
+    )
+    auth_password = resolve_secret(
+        "MULTIPLEX_AUTH_PASSWORD",
+        "auth",
+        "password",
+        DEMO_PASSWORD,
+    )
+    auth_configured = (
+        is_secret_configured("MULTIPLEX_AUTH_USER", "auth", "user")
+        and is_secret_configured("MULTIPLEX_AUTH_PASSWORD", "auth", "password")
+    )
+    demo_mode_enabled = os.getenv("MULTIPLEX_ENABLE_DEMO_MODE", "false").lower() == "true"
+    if not auth_configured and not demo_mode_enabled:
+        st.error(
+            "Demo mode is disabled. Configure MULTIPLEX_AUTH_USER/"
+            "MULTIPLEX_AUTH_PASSWORD or Streamlit secrets to continue."
+        )
+        st.stop()
+    demo_mode = demo_mode_enabled and not auth_configured
+    if demo_mode:
+        st.warning(
+            "Demo credentials are active. Configure MULTIPLEX_AUTH_USER/"
+            "MULTIPLEX_AUTH_PASSWORD or Streamlit secrets before production."
+        )
+    query_params = getattr(st, "query_params", {})
+    auto_login_value = query_params.get("autologin", "false")
+    if isinstance(auto_login_value, list):
+        auto_login_value = auto_login_value[0]
+    auto_login = str(auto_login_value).lower() == "true"
+    if demo_mode and auto_login:
+        st.session_state.authenticated = True
+        st.session_state.username = DEMO_USER
 
-    if submitted:
-        if username == "1" and password == "qwerty":
+    def handle_login() -> None:
+        username_value = st.session_state.get("login_user", "")
+        password_value = st.session_state.get("login_password", "")
+        if secrets.compare_digest(username_value, auth_user) and secrets.compare_digest(
+            password_value,
+            auth_password,
+        ):
             st.session_state.authenticated = True
-            st.session_state.username = username
+            st.session_state.username = username_value
             st.session_state.login_error = ""
-            st.rerun()
         else:
-            st.session_state.login_error = "Invalid credentials. Try user 1 / qwerty."
+            st.session_state.login_error = "Invalid credentials. Please try again."
+
+    st.text_input(
+        "User ID",
+        value=st.session_state.username,
+        key="login_user",
+    )
+    st.text_input(
+        "Password",
+        type="password",
+        key="login_password",
+    )
+    st.button("Unlock dashboard", on_click=handle_login)
+
+    if (
+        not st.session_state.authenticated
+        and secrets.compare_digest(st.session_state.get("login_user", ""), auth_user)
+        and secrets.compare_digest(
+            st.session_state.get("login_password", ""),
+            auth_password,
+        )
+    ):
+        st.session_state.authenticated = True
+        st.session_state.username = st.session_state.get("login_user", "")
+        st.session_state.login_error = ""
+
+    if st.session_state.authenticated:
+        st.rerun()
 
     if st.session_state.login_error:
         st.error(st.session_state.login_error)
@@ -201,6 +310,7 @@ def login_view() -> None:
 
 
 def build_metrics() -> Iterable[MetricCard]:
+    """Return demo KPI cards for the dashboard preview."""
     return (
         MetricCard("Portfolio NAV", "$1.28M", "+2.1% today", "All strategies"),
         MetricCard("Active Agents", "08", "Stable heartbeat", "All systems"),
@@ -210,16 +320,16 @@ def build_metrics() -> Iterable[MetricCard]:
 
 
 def generate_timeseries(points: int = 30) -> pd.DataFrame:
-    rng = np.random.default_rng(42)
+    """Generate synthetic performance data for the demo charts."""
+    rng = np.random.default_rng(DEMO_SEED)
     base = rng.normal(0.001, 0.01, points).cumsum()
     values = 1 + base
-    dates = [datetime.utcnow() - timedelta(hours=points - i) for i in range(points)]
+    now = datetime.now(timezone.utc)
+    dates = [now - timedelta(hours=points - i) for i in range(points)]
     return pd.DataFrame({"timestamp": dates, "value": values})
 
 
 def render_line_chart(data: pd.DataFrame) -> None:
-    import matplotlib.pyplot as plt
-
     fig, ax = plt.subplots(figsize=(7, 2.8))
     ax.plot(data["timestamp"], data["value"], color="#60a5fa", linewidth=2.2)
     ax.fill_between(data["timestamp"], data["value"], color="#1d4ed8", alpha=0.18)
@@ -237,8 +347,6 @@ def render_line_chart(data: pd.DataFrame) -> None:
 
 
 def render_allocation_chart() -> None:
-    import matplotlib.pyplot as plt
-
     labels = ["MATIC", "ETH", "WBTC", "Stable"]
     sizes = [32, 24, 18, 26]
     colors = ["#3b82f6", "#22c55e", "#f97316", "#64748b"]
@@ -250,7 +358,8 @@ def render_allocation_chart() -> None:
     st.pyplot(fig, use_container_width=True)
 
 
-def maybe_send_telegram(token: str, chat_id: str, message: str) -> str:
+def send_telegram_notification(token: str, chat_id: str, message: str) -> str:
+    """Send a Telegram notification and return a status string."""
     if not token or not chat_id:
         return "Telegram token/chat ID missing."
 
@@ -259,13 +368,18 @@ def maybe_send_telegram(token: str, chat_id: str, message: str) -> str:
         response = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             json=payload,
-            timeout=10,
+            timeout=TELEGRAM_REQUEST_TIMEOUT,
         )
         if response.ok:
             return "Notification sent."
         return f"Telegram error: {response.status_code}"
     except requests.RequestException as exc:
-        return f"Telegram request failed: {exc}"
+        logger.warning(
+            "Telegram notification failed: %s",
+            exc,
+            exc_info=True,
+        )
+        return "Telegram request failed. Verify connectivity and credentials."
 
 
 def dashboard_view() -> None:
@@ -282,8 +396,30 @@ def dashboard_view() -> None:
         default=["DeFi", "ML Signals"],
     )
     st.sidebar.markdown("### Telegram notifications")
-    tg_token = st.sidebar.text_input("Bot token", type="password")
-    tg_chat_id = st.sidebar.text_input("Chat ID")
+    tg_token_default = resolve_secret(
+        "MULTIPLEX_TG_TOKEN",
+        "telegram",
+        "bot_token",
+        "",
+    )
+    tg_chat_default = resolve_secret(
+        "MULTIPLEX_TG_CHAT_ID",
+        "telegram",
+        "chat_id",
+        "",
+    )
+    override_tg = st.sidebar.checkbox("Override Telegram credentials")
+    if override_tg:
+        tg_token = st.sidebar.text_input(
+            "Bot token",
+            value=tg_token_default,
+            type="password",
+        )
+        tg_chat_id = st.sidebar.text_input("Chat ID", value=tg_chat_default)
+    else:
+        tg_token = tg_token_default
+        tg_chat_id = tg_chat_default
+        st.sidebar.caption("Loaded from secrets/environment when available.")
 
     col_header, col_status, col_actions = st.columns([2.2, 1.2, 1])
     with col_header:
@@ -292,8 +428,8 @@ def dashboard_view() -> None:
             unsafe_allow_html=True,
         )
         st.markdown(
-            "<div class='header-subtitle'>VSCode-inspired control room for"
-            " real-time oversight.</div>",
+            "<div class='header-subtitle'>VSCode-inspired control room for "
+            "real-time oversight.</div>",
             unsafe_allow_html=True,
         )
     with col_status:
@@ -336,8 +472,10 @@ def dashboard_view() -> None:
     left_col, right_col = st.columns([1.6, 1])
     with left_col:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Performance heartbeat</div>",
-                    unsafe_allow_html=True)
+        st.markdown(
+            "<div class='section-title'>Performance heartbeat</div>",
+            unsafe_allow_html=True,
+        )
         st.markdown(
             "<div class='muted'>Hourly PnL trend with strategy overlay.</div>",
             unsafe_allow_html=True,
@@ -345,10 +483,14 @@ def dashboard_view() -> None:
         render_line_chart(generate_timeseries())
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='card' style='margin-top:16px;'>",
-                    unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Future action planner</div>",
-                    unsafe_allow_html=True)
+        st.markdown(
+            "<div class='card' style='margin-top:16px;'>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div class='section-title'>Future action planner</div>",
+            unsafe_allow_html=True,
+        )
         st.markdown(
             "<div class='muted'>Tune upcoming actions based on requirements.</div>",
             unsafe_allow_html=True,
@@ -357,21 +499,30 @@ def dashboard_view() -> None:
         st.checkbox("Promote top-performing model", value=False)
         st.checkbox("Throttle high-volatility pairs", value=True)
         st.slider("Target health factor", 1.1, 2.5, 1.6, 0.1)
-        st.selectbox("Rebalance cadence", ["Hourly", "Daily", "Weekly"],
-                     index=1)
+        st.selectbox(
+            "Rebalance cadence",
+            ["Hourly", "Daily", "Weekly"],
+            index=1,
+        )
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right_col:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Allocation mix</div>",
-                    unsafe_allow_html=True)
+        st.markdown(
+            "<div class='section-title'>Allocation mix</div>",
+            unsafe_allow_html=True,
+        )
         render_allocation_chart()
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='card' style='margin-top:16px;'>",
-                    unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Signal telemetry</div>",
-                    unsafe_allow_html=True)
+        st.markdown(
+            "<div class='card' style='margin-top:16px;'>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div class='section-title'>Signal telemetry</div>",
+            unsafe_allow_html=True,
+        )
         signals = pd.DataFrame(
             {
                 "Stream": ["Mean reversion", "Momentum", "Risk filter"],
@@ -382,16 +533,20 @@ def dashboard_view() -> None:
         st.dataframe(signals, use_container_width=True, height=150)
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='card' style='margin-top:16px;'>",
-                    unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Notifications</div>",
-                    unsafe_allow_html=True)
+        st.markdown(
+            "<div class='card' style='margin-top:16px;'>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div class='section-title'>Notifications</div>",
+            unsafe_allow_html=True,
+        )
         st.markdown(
             "<div class='muted'>Optional Telegram alert channel.</div>",
             unsafe_allow_html=True,
         )
         if st.button("Send Telegram ping"):
-            status = maybe_send_telegram(
+            status = send_telegram_notification(
                 tg_token,
                 tg_chat_id,
                 "Multiplex Studio: system heartbeat OK.",
@@ -399,10 +554,14 @@ def dashboard_view() -> None:
             st.info(status)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='card' style='margin-top:16px;'>",
-                unsafe_allow_html=True)
-    st.markdown("<div class='section-title'>Activity feed</div>",
-                unsafe_allow_html=True)
+    st.markdown(
+        "<div class='card' style='margin-top:16px;'>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<div class='section-title'>Activity feed</div>",
+        unsafe_allow_html=True,
+    )
     feed = [
         "✅ Risk guard recalibrated for low volatility session.",
         "🟦 Model inference batch processed (latency 82ms).",
@@ -418,8 +577,7 @@ def dashboard_view() -> None:
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.caption("Multiplex Studio — mobile-first admin vision in a single,"
-               " elegant pane.")
+    st.caption("Multiplex Studio — mobile-first admin vision in a single elegant pane.")
 
 
 def main() -> None:
