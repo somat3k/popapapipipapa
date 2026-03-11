@@ -48,9 +48,9 @@ class TestSetScoreStore:
                     symbol TEXT NOT NULL,
                     total_iterations INTEGER,
                     total_bars INTEGER,
-                    data_source TEXT,
-                    connection_status TEXT,
-                    best_composite_score REAL,
+                    data_source TEXT, -- api/csv/synthetic
+                    connection_status TEXT, -- connected/no_markets/error/skipped
+                    best_composite_score REAL, -- composite score (0-1 range)
                     best_letter_grade TEXT
                 )
                 """

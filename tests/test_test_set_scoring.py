@@ -8,7 +8,14 @@ from app.evaluation.rl_pipeline import IterationResult
 from app.evaluation.test_set_scoring import run_test_set_scoring
 from app.evaluation.test_set_storage import TestSetScoreStore
 from app.ml.models import LinearRegressionModel
-from morpho.client import MorphoBlueClient
+
+
+class DummyMorphoClient:
+    def list_markets(self):
+        return {"TEST": "0x" + "00" * 32}
+
+    def get_position(self, market_id: str):
+        return {"market_id": market_id}
 
 
 def test_score_store_round_trip(tmp_path):
@@ -65,7 +72,7 @@ def test_run_test_set_scoring_stores_results(tmp_path):
         data_source="synthetic",
         bars_count=120,
         seed=7,
-        morpho_client=MorphoBlueClient(),
+        morpho_client=DummyMorphoClient(),
         store=store,
         iterations=1,
         patience=1,

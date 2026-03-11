@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Protocol
 
 from app.evaluation.data_loader import OHLCVLoader
 from app.evaluation.rl_pipeline import MIN_TRAINING_BARS, IterationResult, RLPipeline
@@ -23,7 +23,12 @@ class ConnectionReport:
     error: str = ""
 
 
-def _check_connection(morpho_client: Optional[Any]) -> ConnectionReport:
+class MorphoClientProtocol(Protocol):
+    def list_markets(self) -> Any:
+        ...
+
+
+def _check_connection(morpho_client: Optional[MorphoClientProtocol]) -> ConnectionReport:
     if morpho_client is None:
         return ConnectionReport(status="skipped")
     try:
@@ -85,11 +90,11 @@ def run_test_set_scoring(
     csv_path: Optional[Path] = None,
     bars: Optional[List[Bar]] = None,
     data_loader: Optional[OHLCVLoader] = None,
-    morpho_client: Optional[Any] = None,
+    morpho_client: Optional[MorphoClientProtocol] = None,
     store: Optional[TestSetScoreStore] = None,
     iterations: int = 3,
     patience: int = 2,
-    progress_callback: Optional[Any] = None,
+    progress_callback: Optional[Callable[[int, int, IterationResult], None]] = None,
 ) -> Dict[str, Any]:
     """Run the RL pipeline with test-set scoring and persistence."""
     loader = data_loader or OHLCVLoader()
