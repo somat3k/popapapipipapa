@@ -77,6 +77,9 @@ class TimeframeLayer:
     weight: float
     algorithms: List[Algorithm] = field(default_factory=list)
     last_signal: Optional[Signal] = None
+    # Set to True once run() has processed this layer, distinguishing
+    # "processed but no signal" from "not yet processed".
+    processed: bool = False
 
 
 @dataclass
@@ -133,6 +136,12 @@ class TimeframeFuser:
             )
 
         total_weight = sum(l.weight for l in layers)
+        if total_weight <= 0:
+            return FusedDecision(
+                direction=0, confidence=0.0, agreement_pct=0.0,
+                bullish_weight=0.0, bearish_weight=0.0, neutral_weight=0.0,
+            )
+
         bullish = 0.0
         bearish = 0.0
         neutral = 0.0
@@ -141,7 +150,6 @@ class TimeframeFuser:
         for layer in layers:
             sig = layer.last_signal
             layer_signals[layer.label] = sig
-            w = layer.weight / total_weight
             if sig is None:
                 neutral += layer.weight
             elif sig.direction > 0:
@@ -277,6 +285,7 @@ class MultiTimeframeAnalyzer:
                     meta={**last.meta, "timeframe": layer.label},
                 )
             layer.last_signal = last
+            layer.processed = True
             logger.debug(
                 "[MTF] Timeframe=%s  bars=%d  last_signal=%s",
                 layer.label, len(layer.bars), last,
@@ -286,11 +295,13 @@ class MultiTimeframeAnalyzer:
     def fuse(self) -> FusedDecision:
         """Return the fused decision from all registered timeframe layers.
 
-        Calls :meth:`run` automatically if no layers have been processed.
+        Calls :meth:`run` automatically if any layer has not been processed
+        yet.  Uses the ``processed`` flag to distinguish "not yet run" from
+        "run but no signal produced", preventing re-runs on every call.
         """
-        # Check if we need to run first
+        # Run only if there are unprocessed layers that have data+algorithms
         needs_run = any(
-            l.last_signal is None and l.bars and l.algorithms
+            not l.processed and l.bars and l.algorithms
             for l in self._layers
         )
         if needs_run:

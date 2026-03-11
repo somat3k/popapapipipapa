@@ -152,25 +152,37 @@ class AgentEvaluationMetrics:
         self._base = TradingMetrics(self.returns, risk_free_rate)
 
     # ------------------------------------------------------------------
-    # Delegated base metrics
+    # Delegated base metrics — guarded against empty returns array
     # ------------------------------------------------------------------
 
     def sharpe(self) -> float:
+        if len(self.returns) == 0:
+            return 0.0
         return self._base.sharpe()
 
     def sortino(self) -> float:
+        if len(self.returns) == 0:
+            return 0.0
         return self._base.sortino()
 
     def max_drawdown(self) -> float:
+        if len(self.returns) == 0:
+            return 0.0
         return self._base.max_drawdown()
 
     def win_rate(self) -> float:
+        if len(self.returns) == 0:
+            return 0.0
         return self._base.win_rate()
 
     def profit_factor(self) -> float:
+        if len(self.returns) == 0:
+            return 0.0
         return self._base.profit_factor()
 
     def calmar(self) -> float:
+        if len(self.returns) == 0:
+            return 0.0
         return self._base.calmar()
 
     # ------------------------------------------------------------------

@@ -121,6 +121,14 @@ class TestOHLCVLoader:
         with pytest.raises(FileNotFoundError):
             OHLCVLoader().load_from_csv(tmp_path / "nonexistent_file.csv")
 
+    def test_load_from_csv_missing_required_columns(self, tmp_path):
+        from app.evaluation.data_loader import OHLCVLoader
+        csv_path = tmp_path / "bad.csv"
+        with open(csv_path, "w", newline="") as f:
+            f.write("foo,bar,baz\n1,2,3\n")
+        with pytest.raises(ValueError, match="Missing required columns"):
+            OHLCVLoader().load_from_csv(csv_path)
+
     def test_fetch_multi_returns_dict(self, monkeypatch):
         from app.evaluation import data_loader
 
@@ -135,7 +143,7 @@ class TestOHLCVLoader:
         assert "BTC" in result
         assert len(result["ETH"]) > 0
 
-    def test_fetch_multi_timeframe_keys(self, monkeypatch):
+    def test_fetch_multi_timeframe_keys_and_different_bar_counts(self, monkeypatch):
         from app.evaluation import data_loader
 
         monkeypatch.setattr(
@@ -144,9 +152,23 @@ class TestOHLCVLoader:
             lambda *a, **kw: (_ for _ in ()).throw(ConnectionError("offline")),
         )
         result = data_loader.OHLCVLoader().fetch_multi_timeframe(
-            "ETH", days=30, timeframes=["1h", "4h", "1d"]
+            "ETH", days=120, timeframes=["1h", "4h", "1d"]
         )
         assert set(result.keys()) == {"1h", "4h", "1d"}
+
+        bars_1h = result["1h"]
+        bars_4h = result["4h"]
+        bars_1d = result["1d"]
+
+        # All timeframes should produce at least one bar
+        assert len(bars_1h) > 0
+        assert len(bars_4h) > 0
+        assert len(bars_1d) > 0
+
+        # Higher-frequency timeframes must have strictly fewer resampled bars
+        # than lower-frequency ones when starting from the same daily series.
+        # 1h is resampled by factor 24, 4h by factor 4, 1d by factor 1.
+        assert len(bars_1d) >= len(bars_4h) >= len(bars_1h)
 
 
 def test_resample_bars():
@@ -215,6 +237,14 @@ class TestTimeframeFuser:
         decision = TimeframeFuser().fuse(layers)
         assert decision.direction == 0
 
+    def test_fuse_zero_weight_layers_returns_neutral(self):
+        from app.evaluation.timeframe_fusion import TimeframeFuser, TimeframeLayer
+        """Zero-weight layers must not cause a ZeroDivisionError."""
+        sig = Signal(1.0, "1d", +1, confidence=0.9)
+        layers = [TimeframeLayer("1d", [], weight=0.0, last_signal=sig)]
+        decision = TimeframeFuser().fuse(layers)
+        assert decision.direction == 0  # neutral — no positive weight
+
     def test_fused_decision_summary_keys(self):
         from app.evaluation.timeframe_fusion import TimeframeFuser, TimeframeLayer
         sig = Signal(1.0, "1d", 1, confidence=0.7)
@@ -281,6 +311,17 @@ class TestMultiTimeframeAnalyzer:
         analyzer.add_timeframe("1d", [])  # no bars
         layer = analyzer.layers[0]
         assert layer.weight == DEFAULT_TF_WEIGHTS["1d"]
+
+    def test_fuse_does_not_rerun_after_processed(self, synthetic_bars):
+        """fuse() must not re-run algorithms when layers are already processed."""
+        from app.evaluation.timeframe_fusion import MultiTimeframeAnalyzer
+        analyzer = MultiTimeframeAnalyzer()
+        analyzer.add_timeframe("1d", synthetic_bars, weight=3.0)
+        analyzer.run()
+        # Mark a sentinel value on the last_signal to detect re-runs
+        sentinel = analyzer.layers[0].last_signal
+        analyzer.fuse()  # must not call run() again
+        assert analyzer.layers[0].last_signal is sentinel
 
 
 class TestMarketRegimeDetector:
@@ -552,23 +593,34 @@ class TestSupervisedRLAgent:
     def test_pretrain_returns_metrics(self, synthetic_bars):
         from app.evaluation.rl_pipeline import RLEnvironment, SupervisedRLAgent
         from app.ml.models import LinearRegressionModel
-        agent = SupervisedRLAgent(LinearRegressionModel())
         env = RLEnvironment(synthetic_bars[:100])
         X, y = env._build_features(synthetic_bars[:100]), np.sign(
             np.diff([b.close for b in synthetic_bars[:100]])
         )
         X, y = X[:len(y)], y
+        agent = SupervisedRLAgent(LinearRegressionModel(), n_features=X.shape[1])
         metrics = agent.pretrain(X, y)
         assert "rmse" in metrics
+
+    def test_pretrain_raises_on_wrong_n_features(self, synthetic_bars):
+        from app.evaluation.rl_pipeline import RLEnvironment, SupervisedRLAgent
+        from app.ml.models import LinearRegressionModel
+        env = RLEnvironment(synthetic_bars[:50])
+        X = env._features[:40]
+        y = np.sign(np.diff([b.close for b in synthetic_bars[:50]]))[:40]
+        # Declare wrong n_features on purpose
+        agent = SupervisedRLAgent(LinearRegressionModel(), n_features=X.shape[1] + 5)
+        with pytest.raises(ValueError, match="Feature dimension mismatch"):
+            agent.pretrain(X, y)
 
     def test_run_episode_returns_steps(self, synthetic_bars):
         from app.evaluation.rl_pipeline import RLEnvironment, SupervisedRLAgent
         from app.ml.models import LinearRegressionModel
-        agent = SupervisedRLAgent(LinearRegressionModel())
         env = RLEnvironment(synthetic_bars[:40])
         # Pre-train with dummy data so model is trained
         X = env._features[:39]
         y = np.sign(np.diff([b.close for b in synthetic_bars[:40]]))
+        agent = SupervisedRLAgent(LinearRegressionModel(), n_features=X.shape[1])
         agent.pretrain(X, y)
         steps = agent.run_episode(env)
         assert len(steps) > 0

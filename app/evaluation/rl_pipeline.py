@@ -355,7 +355,17 @@ class SupervisedRLAgent:
         -------
         dict
             Training evaluation metrics.
+
+        Raises
+        ------
+        ValueError
+            If ``X.shape[1]`` does not match ``self.n_features``.
         """
+        if X.ndim == 2 and X.shape[1] != self.n_features:
+            raise ValueError(
+                f"[RL-Agent] Feature dimension mismatch in pretrain: "
+                f"expected {self.n_features}, got {X.shape[1]}."
+            )
         self.model.fit(X, y)
         metrics = self.model.evaluate(X, y)
         logger.info("[RL-Agent] Pre-trained model '%s': %s", self.model.name, metrics)
@@ -411,6 +421,13 @@ class SupervisedRLAgent:
         if X_exp.ndim != 2 or X_exp.shape[1] == 0:
             return None
 
+        if X_exp.shape[1] != self.n_features:
+            logger.warning(
+                "[RL-Agent] Skipping policy update: feature dim %d ≠ expected %d.",
+                X_exp.shape[1], self.n_features,
+            )
+            return None
+
         self.model.fit(X_exp, y_exp)
         metrics = self.model.evaluate(X_exp, y_exp)
         logger.info("[RL-Agent] Policy updated on %d samples: %s", len(X_exp), metrics)
@@ -421,6 +438,12 @@ class SupervisedRLAgent:
         if not self.model.is_trained:
             # Random action before training
             return int(np.random.choice([-1, 0, 1]))
+        if state.shape[-1] != self.n_features:
+            logger.warning(
+                "[RL-Agent] State dim %d ≠ expected n_features %d; using hold.",
+                state.shape[-1], self.n_features,
+            )
+            return 0
         pred = self.model.predict(state.reshape(1, -1))
         val = float(pred[0]) if len(pred) > 0 else 0.0
         if val > 0.01:

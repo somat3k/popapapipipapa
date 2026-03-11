@@ -8,6 +8,21 @@ Supports three data sources:
 All sources return a list of :class:`~app.trading.algorithms.Bar` objects
 which are directly consumable by the trading algorithms.
 
+Timeframe handling
+------------------
+``fetch_from_api()`` always fetches a base daily (``1d``) dataset from
+CoinGecko and then resamples it to the requested timeframe:
+
+  ``"1d"``  → no resampling (raw daily bars)
+  ``"4h"``  → resample 4 daily bars into each output bar  (proxy: 4d/bar)
+  ``"1h"``  → resample 24 daily bars into each output bar (proxy: 24d/bar)
+
+This gives genuinely different bar counts across timeframes so that
+multi-timeframe analysis receives structurally distinct datasets.
+
+When real historical intraday data is required, supply a pre-downloaded
+CSV with the appropriate granularity via :meth:`load_from_csv`.
+
 Supported instruments (CoinGecko coin IDs)
 ------------------------------------------
   "ETH"   → "ethereum"
@@ -59,6 +74,14 @@ _SUPPORTED_TIMEFRAMES: Tuple[str, ...] = ("1h", "4h", "1d")
 # Delay between successive CoinGecko API requests to stay within rate limits
 _API_RATE_LIMIT_DELAY = 0.10  # seconds
 
+# Resample factors: how many base daily bars to aggregate per output bar.
+# 1d → 1 (no resampling), 4h → 4 bars/day proxy, 1h → 24 bars/day proxy.
+_TF_RESAMPLE_FACTOR: Dict[str, int] = {
+    "1d": 1,
+    "4h": 4,
+    "1h": 24,
+}
+
 
 class OHLCVLoader:
     """Load OHLCV bars for a given instrument from multiple sources.
@@ -84,6 +107,20 @@ class OHLCVLoader:
     ) -> List[Bar]:
         """Download OHLCV bars from the CoinGecko public API.
 
+        Fetches daily-granularity data from CoinGecko and resamples it to the
+        requested *timeframe*:
+
+          - ``"1d"`` — one bar per day (no resampling)
+          - ``"4h"`` — bars aggregated from groups of 4 daily bars (proxy)
+          - ``"1h"`` — bars aggregated from groups of 24 daily bars (proxy)
+
+        This ensures that ``fetch_multi_timeframe()`` returns structurally
+        different datasets (different bar counts) for each timeframe, which is
+        the prerequisite for meaningful multi-timeframe fusion.
+
+        For high-fidelity intraday data use :meth:`load_from_csv` with a
+        pre-downloaded hourly / 4h CSV file.
+
         Falls back to synthetic data when the network is unavailable.
 
         Parameters
@@ -91,9 +128,9 @@ class OHLCVLoader:
         symbol:
             Asset symbol such as ``"ETH"``, ``"BTC"``, or ``"MATIC"``.
         days:
-            Number of historical days to fetch (max 365 for free tier).
+            Number of historical *daily* bars to fetch before resampling.
         timeframe:
-            One of ``"1h"``, ``"4h"``, ``"1d"``.
+            Target candle timeframe: ``"1d"``, ``"4h"``, or ``"1h"``.
 
         Returns
         -------
@@ -103,20 +140,52 @@ class OHLCVLoader:
         coin_id = COINGECKO_IDS.get(symbol.lower())
         if coin_id is None:
             logger.warning("[DataLoader] Unknown symbol '%s'. Using synthetic data.", symbol)
-            return self.generate_synthetic(n=days, symbol=symbol)
+            return self._synthetic_for_timeframe(days, timeframe, symbol)
 
+        api_success = False
         try:
-            bars = self._fetch_coingecko_ohlc(coin_id, days)
-            if bars:
+            daily_bars = self._fetch_coingecko_ohlc(coin_id, days)
+            if daily_bars:
                 logger.info(
-                    "[DataLoader] Fetched %d bars for %s from CoinGecko.", len(bars), symbol
+                    "[DataLoader] Fetched %d daily bars for %s from CoinGecko.",
+                    len(daily_bars), symbol,
                 )
-                return bars
+                api_success = True
         except Exception as exc:
             logger.warning("[DataLoader] CoinGecko API unavailable (%s). Using synthetic data.", exc)
+            daily_bars = []
 
-        # Offline fallback
-        return self.generate_synthetic(n=days, symbol=symbol)
+        if not api_success:
+            # Offline fallback: generate synthetic daily bars then resample
+            daily_bars = self.generate_synthetic(n=days, symbol=symbol)
+
+        return self._resample_to_timeframe(daily_bars, timeframe)
+
+    def _resample_to_timeframe(self, daily_bars: List[Bar], timeframe: str) -> List[Bar]:
+        """Resample *daily_bars* to the requested *timeframe*.
+
+        Parameters
+        ----------
+        daily_bars:
+            Source bars (one per day, or finer).
+        timeframe:
+            Target timeframe: ``"1d"``, ``"4h"``, or ``"1h"``.  Unknown
+            timeframes are treated as ``"1d"`` (no resampling).
+        """
+        factor = _TF_RESAMPLE_FACTOR.get(timeframe, 1)
+        if factor <= 1:
+            return list(daily_bars)
+        return resample_bars(daily_bars, factor)
+
+    def _synthetic_for_timeframe(
+        self, days: int, timeframe: str, symbol: str
+    ) -> List[Bar]:
+        """Generate synthetic bars and resample to *timeframe*."""
+        # Generate enough daily bars to produce a reasonable output length
+        factor = _TF_RESAMPLE_FACTOR.get(timeframe, 1)
+        n_daily = max(days, factor * 10)  # at least 10 output bars
+        daily = self.generate_synthetic(n=n_daily, symbol=symbol)
+        return self._resample_to_timeframe(daily, timeframe)
 
     def load_from_csv(self, path: Path, symbol: str = "UNKNOWN") -> List[Bar]:
         """Load OHLCV bars from a CSV file.
@@ -149,6 +218,13 @@ class OHLCVLoader:
                 "close": _find_col(lower_headers, ["close", "c", "price"]),
                 "volume": _find_col(lower_headers, ["volume", "vol", "v"]),
             }
+            # Validate required columns before consuming the reader
+            required_fields = ["timestamp", "open", "high", "low", "close"]
+            missing = [field for field in required_fields if col_map.get(field, -1) < 0]
+            if missing:
+                raise ValueError(
+                    f"Missing required columns in CSV {path}: {', '.join(missing)}"
+                )
             for row in reader:
                 try:
                     ts = float(row[headers[col_map["timestamp"]]])
@@ -237,9 +313,11 @@ class OHLCVLoader:
         """
         result: Dict[str, List[Bar]] = {}
         for sym in symbols:
+            coin_id = COINGECKO_IDS.get(sym.lower())
             result[sym] = self.fetch_from_api(sym, days=days, timeframe=timeframe)
-            # Small delay to respect rate limits when hitting real API
-            time.sleep(_API_RATE_LIMIT_DELAY)
+            # Respect rate limits only when a real API endpoint would be used
+            if coin_id is not None:
+                time.sleep(_API_RATE_LIMIT_DELAY)
         return result
 
     def fetch_multi_timeframe(

@@ -343,8 +343,10 @@ class HalfHalfThreeStrategy:
         ----------
         full:
             If True, repay the entire outstanding loan and withdraw all
-            collateral.  If False, repay only the amount needed to reach
-            HF_SAFE.
+            collateral.  If False, repay only the amount needed to bring
+            the health factor up to ``stable_hf`` (the rebalance target,
+            default 1.5), which is safer than targeting ``HF_SAFE`` (2.0)
+            while still leaving the position open.
         """
         pos = self._get_position()
         if pos is None:
@@ -355,6 +357,8 @@ class HalfHalfThreeStrategy:
         if full:
             repay_amount = pos.borrow_usd
         else:
+            # Target stable_hf (the rebalance target) rather than the full safe
+            # zone to reduce gas cost while still providing adequate safety margin.
             repay_fraction = self._hf_manager.repay_fraction(pos.health_factor)
             repay_amount = pos.borrow_usd * repay_fraction
 
@@ -402,7 +406,13 @@ class HalfHalfThreeStrategy:
             supply_apy = float(pos.supply_apy)
             borrow_apy = float(pos.borrow_apy)
             hf = float(pos.health_factor)
-            net_apy = supply_apy * collateral_usd - borrow_apy * borrow_usd
+            # net_apy: weighted average annual yield rate (dimensionless fraction).
+            # = supply_apy × collateral_weight − borrow_apy × borrow_weight
+            # where weights are proportional to each side's USD value.
+            total_usd = collateral_usd + borrow_usd + 1e-12
+            net_apy = (
+                supply_apy * collateral_usd - borrow_apy * borrow_usd
+            ) / total_usd
             return PositionStatus(
                 market_id=self.market_id,
                 collateral=float(pos.collateral),
