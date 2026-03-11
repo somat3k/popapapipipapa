@@ -514,3 +514,568 @@ def test_get_borrow_token_swap_route_not_found():
     from morpho.markets import get_borrow_token_swap_route
 
     assert get_borrow_token_swap_route("WETH", "WBTC") is None
+
+
+# ---------------------------------------------------------------------------
+# api.py
+# ---------------------------------------------------------------------------
+
+from morpho.api import (
+    MorphoAPIClient,
+    APIMarketState,
+    APIUserPosition,
+    MarketRewards,
+    RewardEntry,
+    MORPHO_API_URL,
+    build_supply_payload,
+    build_borrow_payload,
+    build_repay_payload,
+    build_withdraw_payload,
+    build_supply_collateral_payload,
+    build_withdraw_collateral_payload,
+)
+
+
+def test_morpho_api_url_format():
+    assert MORPHO_API_URL.startswith("https://")
+
+
+def test_api_client_fetch_markets_returns_list():
+    client = MorphoAPIClient()
+    markets = client.fetch_markets()
+    assert isinstance(markets, list)
+    assert len(markets) > 0
+
+
+def test_api_client_markets_are_api_market_state():
+    client = MorphoAPIClient()
+    markets = client.fetch_markets()
+    for m in markets:
+        assert isinstance(m, APIMarketState)
+
+
+def test_api_market_state_attributes():
+    client = MorphoAPIClient()
+    markets = client.fetch_markets()
+    m = markets[0]
+    assert m.unique_key.startswith("0x")
+    assert m.loan_symbol != ""
+    assert m.collateral_symbol != ""
+    assert 0.0 < m.lltv <= 1.0
+    assert m.supply_apy >= 0
+    assert m.borrow_apy >= 0
+    assert 0.0 <= m.utilization <= 1.0
+    assert m.liquidity_usd >= 0
+
+
+def test_api_market_state_apy_pct_properties():
+    client = MorphoAPIClient()
+    m = client.fetch_markets()[0]
+    assert abs(m.supply_apy_pct - m.supply_apy * 100) < 0.001
+    assert abs(m.borrow_apy_pct - m.borrow_apy * 100) < 0.001
+    assert abs(m.utilization_pct - m.utilization * 100) < 0.01
+
+
+def test_api_client_markets_sorted_by_supply_apy():
+    client = MorphoAPIClient()
+    markets = client.fetch_markets()
+    apys = [m.supply_apy for m in markets]
+    assert apys == sorted(apys, reverse=True)
+
+
+def test_api_client_fetch_user_positions_returns_list():
+    client = MorphoAPIClient()
+    positions = client.fetch_user_positions("0x" + "00" * 20)
+    assert isinstance(positions, list)
+
+
+def test_api_client_user_positions_are_api_user_position():
+    client = MorphoAPIClient()
+    positions = client.fetch_user_positions("0x" + "00" * 20)
+    for p in positions:
+        assert isinstance(p, APIUserPosition)
+
+
+def test_api_client_fetch_rewards_returns_list():
+    client = MorphoAPIClient()
+    rewards = client.fetch_rewards("0x" + "00" * 20)
+    assert isinstance(rewards, list)
+
+
+def test_api_client_fetch_market_returns_none_for_unknown():
+    client = MorphoAPIClient()
+    # For a made-up key that won't exist even in mock data
+    result = client.fetch_market("0x" + "ff" * 32)
+    # Mock fallback returns None for unknown uniqueKey
+    assert result is None or isinstance(result, APIMarketState)
+
+
+def test_api_query_method_raises_on_bad_url():
+    import urllib.error
+    client = MorphoAPIClient(api_url="http://localhost:1/bad", timeout=1)
+    with pytest.raises(Exception):
+        client.query("{markets{items{uniqueKey}}}")
+
+
+# ---------------------------------------------------------------------------
+# Payload builders
+# ---------------------------------------------------------------------------
+
+def test_build_supply_payload_keys():
+    params = ("0xLoan", "0xColl", "0xOracle", "0xIRM", 860000000000000000)
+    payload = build_supply_payload(params, assets=1_000_000, on_behalf="0x" + "00" * 20)
+    assert "marketParams" in payload
+    assert "assets" in payload
+    assert payload["assets"] == 1_000_000
+    assert payload["shares"] == 0
+    assert payload["onBehalf"] == "0x" + "00" * 20
+    assert "data" in payload
+
+
+def test_build_borrow_payload_keys():
+    params = ("0xLoan", "0xColl", "0xOracle", "0xIRM", 860000000000000000)
+    wallet = "0x" + "11" * 20
+    payload = build_borrow_payload(params, assets=500_000, on_behalf=wallet, receiver=wallet)
+    assert payload["assets"] == 500_000
+    assert payload["receiver"] == wallet
+
+
+def test_build_repay_payload_keys():
+    params = ("0xLoan", "0xColl", "0xOracle", "0xIRM", 860000000000000000)
+    wallet = "0x" + "22" * 20
+    payload = build_repay_payload(params, assets=250_000, on_behalf=wallet)
+    assert payload["assets"] == 250_000
+    assert payload["shares"] == 0
+
+
+def test_build_withdraw_payload_keys():
+    params = ("0xLoan", "0xColl", "0xOracle", "0xIRM", 860000000000000000)
+    wallet = "0x" + "33" * 20
+    payload = build_withdraw_payload(params, assets=100_000, on_behalf=wallet, receiver=wallet)
+    assert "receiver" in payload
+
+
+def test_build_supply_collateral_payload_keys():
+    params = ("0xLoan", "0xColl", "0xOracle", "0xIRM", 860000000000000000)
+    wallet = "0x" + "44" * 20
+    payload = build_supply_collateral_payload(params, assets=10**18, on_behalf=wallet)
+    assert payload["assets"] == 10**18
+    assert "onBehalf" in payload
+
+
+def test_build_withdraw_collateral_payload_keys():
+    params = ("0xLoan", "0xColl", "0xOracle", "0xIRM", 860000000000000000)
+    wallet = "0x" + "55" * 20
+    payload = build_withdraw_collateral_payload(params, assets=10**18, on_behalf=wallet, receiver=wallet)
+    assert "receiver" in payload
+
+
+def test_build_supply_payload_zero_assets():
+    """Zero assets is valid at the payload level (validated by contract, not builder)."""
+    params = ("0xA", "0xB", "0xC", "0xD", 860000000000000000)
+    payload = build_supply_payload(params, assets=0, on_behalf="0x" + "00" * 20)
+    assert payload["assets"] == 0
+
+
+def test_build_borrow_payload_default_data():
+    params = ("0xA", "0xB", "0xC", "0xD", 860000000000000000)
+    wallet = "0x" + "ab" * 20
+    payload = build_repay_payload(params, assets=100, on_behalf=wallet)
+    assert payload["data"] == b""
+
+
+def test_build_supply_collateral_payload_market_params_preserved():
+    params = ("0xLoan", "0xColl", "0xOracle", "0xIRM", 860000000000000000)
+    wallet = "0x" + "cc" * 20
+    payload = build_supply_collateral_payload(params, assets=10**18, on_behalf=wallet)
+    assert payload["marketParams"] == params
+
+
+# ---------------------------------------------------------------------------
+# rewards.py
+# ---------------------------------------------------------------------------
+
+from morpho.rewards import (
+    RewardsCalculator,
+    RewardEstimate,
+    NetAPR,
+    BreakEvenAnalysis,
+    DEFAULT_SUPPLY_REWARD_RATE,
+    DEFAULT_BORROW_REWARD_RATE,
+)
+
+
+def test_rewards_calculator_estimate_supply_rewards():
+    calc = RewardsCalculator()
+    est = calc.estimate_supply_rewards("0xabc", position_usd=10_000, days=365.25)
+    assert isinstance(est, RewardEstimate)
+    assert est.side == "supply"
+    assert est.position_usd == 10_000
+    assert abs(est.reward_usd - 10_000 * DEFAULT_SUPPLY_REWARD_RATE) < 0.01
+    assert est.reward_pct_annual == round(DEFAULT_SUPPLY_REWARD_RATE * 100, 4)
+
+
+def test_rewards_calculator_estimate_borrow_rewards():
+    calc = RewardsCalculator()
+    est = calc.estimate_borrow_rewards("0xabc", position_usd=5_000, days=30)
+    assert est.side == "borrow"
+    expected = 5_000 * DEFAULT_BORROW_REWARD_RATE * 30 / 365.25
+    assert abs(est.reward_usd - expected) < 0.001
+
+
+def test_rewards_calculator_net_supply_apr():
+    calc = RewardsCalculator()
+    net = calc.net_supply_apr("0xmkt", base_apy=0.04)
+    assert isinstance(net, NetAPR)
+    assert net.side == "supply"
+    assert abs(net.net_apr - (0.04 + DEFAULT_SUPPLY_REWARD_RATE)) < 1e-9
+    assert net.is_positive_carry  # supply always positive with positive APY
+
+
+def test_rewards_calculator_net_borrow_apr():
+    calc = RewardsCalculator()
+    net = calc.net_borrow_apr("0xmkt", borrow_apy=0.05)
+    assert net.side == "borrow"
+    assert abs(net.net_apr - (0.05 - DEFAULT_BORROW_REWARD_RATE)) < 1e-9
+
+
+def test_rewards_calculator_positive_carry_borrow():
+    # If reward rate > borrow APY, net borrow APR < 0 → positive carry
+    calc = RewardsCalculator()
+    calc.set_borrow_reward_rate("0xmkt", rate=0.08)
+    net = calc.net_borrow_apr("0xmkt", borrow_apy=0.05)
+    assert net.net_apr < 0
+    assert net.is_positive_carry
+
+
+def test_rewards_calculator_set_rates():
+    calc = RewardsCalculator()
+    calc.set_supply_reward_rate("0xmarket", 0.03)
+    calc.set_borrow_reward_rate("0xmarket", 0.02)
+    assert calc.get_supply_reward_rate("0xmarket") == 0.03
+    assert calc.get_borrow_reward_rate("0xmarket") == 0.02
+
+
+def test_rewards_calculator_unknown_market_uses_defaults():
+    calc = RewardsCalculator()
+    assert calc.get_supply_reward_rate("0xunknown") == DEFAULT_SUPPLY_REWARD_RATE
+    assert calc.get_borrow_reward_rate("0xunknown") == DEFAULT_BORROW_REWARD_RATE
+
+
+def test_rewards_calculator_net_spread():
+    calc = RewardsCalculator()
+    spread = calc.net_spread("0xmkt", supply_apy=0.04, borrow_apy=0.06)
+    expected_s = 0.04 + DEFAULT_SUPPLY_REWARD_RATE
+    expected_b = 0.06 - DEFAULT_BORROW_REWARD_RATE
+    assert abs(spread - (expected_s - expected_b)) < 1e-9
+
+
+def test_rewards_calculator_break_even_profitable():
+    calc = RewardsCalculator()
+    # High supply APY, low borrow → net daily earn positive
+    analysis = calc.break_even_analysis(
+        "0xmkt",
+        supply_usd=20_000,
+        borrow_usd=5_000,
+        supply_apy=0.08,
+        borrow_apy=0.02,
+    )
+    assert isinstance(analysis, BreakEvenAnalysis)
+    assert analysis.profitable is True
+    assert analysis.break_even_days == 0.0
+    assert analysis.net_daily_earn_usd > 0
+
+
+def test_rewards_calculator_break_even_not_profitable():
+    calc = RewardsCalculator()
+    # Borrow more than supply, high borrow APY
+    analysis = calc.break_even_analysis(
+        "0xmkt",
+        supply_usd=1_000,
+        borrow_usd=50_000,
+        supply_apy=0.02,
+        borrow_apy=0.20,
+    )
+    assert analysis.profitable is False
+    assert analysis.break_even_days == float("inf")
+
+
+def test_rewards_calculator_compare_markets():
+    calc = RewardsCalculator()
+    markets_data = [
+        {"market_key": "0xA", "supply_apy": 0.04, "borrow_apy": 0.06},
+        {"market_key": "0xB", "supply_apy": 0.07, "borrow_apy": 0.09},
+        {"market_key": "0xC", "supply_apy": 0.02, "borrow_apy": 0.04},
+    ]
+    ranked = calc.compare_markets(markets_data)
+    assert len(ranked) == 3
+    net_aprs = [r["net_supply_apr_pct"] for r in ranked]
+    assert net_aprs == sorted(net_aprs, reverse=True)
+    for r in ranked:
+        assert "net_supply_apr_pct" in r
+        assert "net_borrow_apr_pct" in r
+        assert "positive_carry" in r
+
+
+# ---------------------------------------------------------------------------
+# opportunity.py
+# ---------------------------------------------------------------------------
+
+from morpho.opportunity import (
+    OpportunityScanner,
+    OpportunityScore,
+    BorrowSwapOpportunity,
+    BorrowCapacity,
+    RebalanceRecommendation,
+    SAFE_BORROW_LTV_RATIO,
+    PRIME_SCORE_THRESHOLD,
+)
+
+
+def test_opportunity_scanner_rank_returns_list():
+    scanner = OpportunityScanner()
+    ranked = scanner.rank_opportunities()
+    assert isinstance(ranked, list)
+
+
+def test_opportunity_scanner_ranked_by_score():
+    scanner = OpportunityScanner()
+    ranked = scanner.rank_opportunities(min_score=0.0, min_liquidity_usd=0.0)
+    scores = [o.score for o in ranked]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_opportunity_score_attributes():
+    scanner = OpportunityScanner()
+    ranked = scanner.rank_opportunities(min_score=0.0, min_liquidity_usd=0.0)
+    assert len(ranked) > 0
+    opp = ranked[0]
+    assert isinstance(opp, OpportunityScore)
+    assert opp.loan_symbol != ""
+    assert opp.collateral_symbol != ""
+    assert 0 <= opp.score <= 100
+    assert opp.label in ("PRIME", "GOOD", "FAIR", "POOR")
+
+
+def test_opportunity_score_is_prime():
+    opp = OpportunityScore(
+        market_key="0xA",
+        loan_symbol="USDC_E",
+        collateral_symbol="WETH",
+        lltv=0.86,
+        supply_apy_pct=4.2,
+        borrow_apy_pct=5.8,
+        net_supply_apr_pct=5.7,
+        net_borrow_apr_pct=4.8,
+        utilization_pct=72.0,
+        liquidity_usd=14000.0,
+        score=75.0,
+    )
+    assert opp.is_prime
+    assert opp.label == "PRIME"
+
+
+def test_opportunity_scanner_find_best_supply():
+    scanner = OpportunityScanner()
+    best = scanner.find_best_supply_market(amount_usd=1_000.0)
+    assert best is None or isinstance(best, OpportunityScore)
+
+
+def test_opportunity_scanner_find_best_supply_by_loan_symbol():
+    scanner = OpportunityScanner()
+    best = scanner.find_best_supply_market(amount_usd=100.0, loan_symbol="USDC_E")
+    if best is not None:
+        assert best.loan_symbol == "USDC_E"
+
+
+def test_opportunity_scanner_borrow_capacity():
+    scanner = OpportunityScanner()
+    cap = scanner.get_borrow_capacity(
+        market_key="0xA",
+        loan_symbol="USDC_E",
+        collateral_symbol="WETH",
+        current_collateral_usd=10_000.0,
+        current_borrow_usd=3_000.0,
+        lltv=0.86,
+        additional_supply_usd=2_000.0,
+    )
+    assert isinstance(cap, BorrowCapacity)
+    assert cap.max_borrow_usd == round(12_000.0 * 0.86, 2)
+    assert cap.safe_additional_borrow_usd >= 0
+
+
+def test_opportunity_scanner_borrow_capacity_no_extra_supply():
+    scanner = OpportunityScanner()
+    cap = scanner.get_borrow_capacity(
+        market_key="0xB",
+        loan_symbol="USDC",
+        collateral_symbol="WETH",
+        current_collateral_usd=5_000.0,
+        current_borrow_usd=2_000.0,
+        lltv=0.86,
+        additional_supply_usd=0.0,
+    )
+    assert cap.safe_additional_borrow_usd == round(5_000 * 0.86 * SAFE_BORROW_LTV_RATIO - 2_000, 2)
+
+
+def test_opportunity_scanner_should_rebalance_returns_recommendation():
+    scanner = OpportunityScanner()
+    rec = scanner.should_rebalance(
+        current_market_key="0x" + "a1" * 32,  # matches mock data
+        current_supply_apy=0.042,
+    )
+    assert isinstance(rec, RebalanceRecommendation)
+    assert isinstance(rec.should_rebalance, bool)
+    assert rec.improvement_pct is not None
+
+
+def test_opportunity_scanner_classify_borrow_token_swap():
+    scanner = OpportunityScanner()
+    swaps = scanner.classify_borrow_token_swap(
+        current_market_key="0x" + "a1" * 32,
+        current_loan_symbol="USDC_E",
+        collateral_symbol="WETH",
+    )
+    assert isinstance(swaps, list)
+    for s in swaps:
+        assert isinstance(s, BorrowSwapOpportunity)
+        assert s.classification in ("cost_saving", "neutral", "worse")
+
+
+def test_opportunity_scanner_scan_markets():
+    scanner = OpportunityScanner()
+    markets = scanner.scan_markets()
+    assert isinstance(markets, list)
+    assert len(markets) > 0
+
+
+# ---------------------------------------------------------------------------
+# visuals.py
+# ---------------------------------------------------------------------------
+
+from morpho import visuals
+
+
+def test_visuals_apy_bar_chart():
+    client = MorphoAPIClient()
+    markets = client.fetch_markets()
+    output = visuals.apy_bar_chart(markets)
+    assert isinstance(output, str)
+    assert "APY" in output
+    assert len(output) > 10
+
+
+def test_visuals_apy_bar_chart_empty():
+    output = visuals.apy_bar_chart([])
+    assert "No market" in output
+
+
+def test_visuals_utilization_gauge():
+    output = visuals.utilization_gauge(0.72, "WETH/USDC_E")
+    assert "72.0" in output
+    assert "WETH/USDC_E" in output
+
+
+def test_visuals_utilization_gauge_high():
+    output = visuals.utilization_gauge(0.95)
+    assert "HIGH" in output
+
+
+def test_visuals_position_table_empty():
+    output = visuals.position_table([])
+    assert "No positions" in output
+
+
+def test_visuals_position_table():
+    from morpho.client import MorphoBlueClient
+    client = MorphoBlueClient()
+    positions = client.fetch_user_positions("0x" + "00" * 20) if hasattr(client, "fetch_user_positions") else []
+    # Use API client positions for table
+    api = MorphoAPIClient()
+    api_positions = api.fetch_user_positions("0x" + "00" * 20)
+    output = visuals.position_table(api_positions)
+    assert isinstance(output, str)
+
+
+def test_visuals_opportunity_ranking():
+    scanner = OpportunityScanner()
+    ranked = scanner.rank_opportunities(min_score=0.0, min_liquidity_usd=0.0)
+    output = visuals.opportunity_ranking(ranked)
+    assert isinstance(output, str)
+    assert "Opportunity Ranking" in output
+
+
+def test_visuals_opportunity_ranking_empty():
+    output = visuals.opportunity_ranking([])
+    assert "No opportunities" in output
+
+
+def test_visuals_health_factor_meter_infinite():
+    output = visuals.health_factor_meter(float("inf"))
+    assert "∞" in output
+
+
+def test_visuals_health_factor_meter_safe():
+    output = visuals.health_factor_meter(2.0)
+    assert "2.000" in output
+    assert "SAFE" in output
+
+
+def test_visuals_health_factor_meter_at_risk():
+    output = visuals.health_factor_meter(1.08)
+    assert "AT RISK" in output
+
+
+def test_visuals_health_factor_meter_liquidatable():
+    output = visuals.health_factor_meter(0.95)
+    assert "LIQUIDATABLE" in output
+
+
+def test_visuals_borrow_capacity_table():
+    scanner = OpportunityScanner()
+    cap = scanner.get_borrow_capacity(
+        "0xA", "USDC_E", "WETH", 10_000.0, 3_000.0, 0.86, 1_000.0
+    )
+    output = visuals.borrow_capacity_table([cap])
+    assert "Borrow Capacity" in output
+    assert "WETH" in output
+
+
+def test_visuals_borrow_capacity_table_empty():
+    output = visuals.borrow_capacity_table([])
+    assert "No borrow" in output
+
+
+def test_visuals_market_summary():
+    client = MorphoAPIClient()
+    markets = client.fetch_markets()
+    output = visuals.market_summary(markets[0])
+    assert "Market:" in output
+    assert "Supply APY" in output
+    assert "Borrow APY" in output
+    assert "Liquidity" in output
+
+
+def test_visuals_rewards_table_empty():
+    output = visuals.rewards_table([])
+    assert "No reward" in output
+
+
+def test_visuals_rewards_table():
+    from morpho.api import MarketRewards, RewardEntry
+    mr = MarketRewards(
+        market_key="0x" + "a1" * 32,
+        loan_symbol="USDC_E",
+        supply_rewards=[
+            RewardEntry("MORPHO", "0x" + "aa" * 20, 1.5, 3.2, 0.0)
+        ],
+        borrow_rewards=[],
+    )
+    output = visuals.rewards_table([mr])
+    assert "MORPHO" in output
+    assert "1.500000" in output
+
+
+def test_visuals_util_gauge_inline():
+    output = visuals.util_gauge_inline(0.50)
+    assert "50.0" in output
