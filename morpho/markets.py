@@ -65,6 +65,14 @@ def build_market_id(
     Returns
     -------
     ``"0x" + 64 hex chars`` representing the bytes32 market ID.
+
+    Notes
+    -----
+    For production use, install ``pysha3`` (``pip install pysha3``) or
+    ``eth_hash`` to obtain the authentic Ethereum keccak256 hash.  When
+    neither is available, a best-effort SHA-3 digest is returned — the
+    resulting ID **will differ** from the on-chain ID and must not be used
+    for live transactions.
     """
     encoded = (
         _address_to_bytes32(loan_token)
@@ -73,9 +81,25 @@ def build_market_id(
         + _address_to_bytes32(irm)
         + _uint256_to_bytes32(lltv)
     )
-    digest = hashlib.new("sha3_256", encoded).digest()  # keccak256 ≈ sha3
-    # NOTE: Python's hashlib sha3_256 == keccak256 on Ethereum only when using
-    # the legacy keccak (not NIST SHA-3).  For production, use pysha3 or eth_hash.
+    # Prefer eth_hash (pysha3-backed) → pysha3 direct → fallback SHA-3
+    try:
+        from eth_hash.auto import keccak  # type: ignore
+        digest = keccak(encoded)
+    except ImportError:
+        try:
+            import sha3 as _sha3  # pysha3  # type: ignore
+            digest = _sha3.keccak_256(encoded).digest()
+        except ImportError:
+            # Warning: Python's hashlib sha3_256 is NIST SHA-3, NOT Ethereum keccak256.
+            # Install pysha3 for correct production market IDs.
+            import warnings
+            warnings.warn(
+                "pysha3/eth_hash not installed — market IDs will NOT match on-chain values. "
+                "Install pysha3: pip install pysha3",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            digest = hashlib.new("sha3_256", encoded).digest()
     return "0x" + digest.hex()
 
 

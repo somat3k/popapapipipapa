@@ -83,9 +83,15 @@ class PositionSimulator:
         borrow_cost = borrow_end - borrow_start
         net_yield = supply_earned - borrow_cost
 
-        # Break-even: days until supply_earned covers borrow_cost
-        if supply_earned > 0 and net_yield > 0:
-            break_even = horizon_days * (borrow_cost / supply_earned)
+        # Break-even: days until supply_earned equals borrow_cost
+        # (i.e. net yield goes from 0 → positive)
+        if supply_apy > borrow_apy and borrow_start > 0:
+            # solve: supply_start*(1+supply_apy)^t = supply_start + borrow_start*(1+borrow_apy)^t - borrow_start
+            # Approximate linearly: break_even = borrow_cost / (daily_supply_rate * supply_start)
+            daily_net_earn = supply_start * supply_apy / 365.25 - borrow_start * borrow_apy / 365.25
+            break_even = borrow_cost / daily_net_earn if daily_net_earn > 0 else float("inf")
+        elif supply_earned > borrow_cost:
+            break_even = 0.0
         else:
             break_even = float("inf")
 
@@ -161,11 +167,7 @@ class PositionSimulator:
         if market is None:
             return {"error": f"Unknown market: {market_name}"}
 
-        original_price = (
-            self._client._provider.get_price(market.collateral_token_symbol)
-            if hasattr(self._client._provider, "get_price")
-            else 1.0
-        )
+        original_price = self._client.get_collateral_price(market.collateral_token_symbol)
         new_price = original_price * (1 - price_drop_pct / 100)
         lltv = market.lltv / 1e18
         collateral_units = pos.collateral / (10 ** market.collateral_decimals)

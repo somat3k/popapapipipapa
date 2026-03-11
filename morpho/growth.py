@@ -295,11 +295,7 @@ class GrowthEngine:
     def _compute_safe_borrow(self, market_name: str, market: MarketConfig) -> int:
         """Compute a safe borrow amount based on current collateral and target LTV."""
         pos = self._client.get_position(market_name)
-        collateral_price = (
-            self._client._provider.get_price(market.collateral_token_symbol)
-            if hasattr(self._client._provider, "get_price")
-            else 1.0
-        )
+        collateral_price = self._client.get_collateral_price(market.collateral_token_symbol)
         collateral_value = float(pos.collateral) * collateral_price / (10 ** market.collateral_decimals)
         lltv = market.lltv / 1e18
         max_borrow = collateral_value * lltv
@@ -321,11 +317,7 @@ class GrowthEngine:
         if market is None or pos.borrow_assets <= 0:
             return GrowthCycleResult(self._cycle, market_name, "auto_repay", True)
 
-        collateral_price = (
-            self._client._provider.get_price(market.collateral_token_symbol)
-            if hasattr(self._client._provider, "get_price")
-            else 1.0
-        )
+        collateral_price = self._client.get_collateral_price(market.collateral_token_symbol)
         collateral_value = float(pos.collateral) * collateral_price / (10 ** market.collateral_decimals)
         lltv = market.lltv / 1e18
         # target_borrow = collateral_value × lltv / REBALANCE_HF_TARGET

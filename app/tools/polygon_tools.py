@@ -10,21 +10,31 @@ RPC is configured — they return structured error dicts rather than raising.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Provider helper
+# Provider helper (cached per RPC URL)
 # ---------------------------------------------------------------------------
 
+_w3_cache: dict[str, Any] = {}
+_w3_lock = threading.Lock()
+
+
 def _get_web3(rpc_url: Optional[str] = None) -> Any:
-    """Return a connected Web3 instance or None if unavailable."""
+    """Return a cached Web3 instance for *rpc_url*, or None if unavailable."""
+    url = rpc_url or "https://polygon-rpc.com"
+    with _w3_lock:
+        if url in _w3_cache:
+            return _w3_cache[url]
     try:
         from web3 import Web3  # type: ignore
 
-        url = rpc_url or "https://polygon-rpc.com"
         w3 = Web3(Web3.HTTPProvider(url, request_kwargs={"timeout": 10}))
+        with _w3_lock:
+            _w3_cache[url] = w3
         return w3
     except ImportError:
         logger.debug("web3 not installed — Polygon tools in offline mode.")

@@ -125,48 +125,60 @@ def register_all_tools(registry: Optional[ToolRegistry] = None) -> ToolRegistry:
 
 
 def _register_morpho_tools(reg: ToolRegistry) -> None:
-    """Register Morpho Blue tools backed by the mock client."""
+    """Register Morpho Blue tools backed by a lazily-created mock client."""
     try:
         from morpho.client import MorphoBlueClient
         from morpho.growth import GrowthEngine
         from morpho.simulation import PositionSimulator
 
-        _client = MorphoBlueClient()  # mock mode
-        _engine = GrowthEngine(_client)
-        _sim = PositionSimulator(_client)
+        def _client() -> MorphoBlueClient:
+            """Return (or create) the shared mock client."""
+            if not hasattr(_register_morpho_tools, "_shared_client"):
+                _register_morpho_tools._shared_client = MorphoBlueClient()  # type: ignore[attr-defined]
+            return _register_morpho_tools._shared_client  # type: ignore[attr-defined]
 
-        _safe_register(reg, "morpho.list_markets", _client.list_markets)
+        def _engine() -> GrowthEngine:
+            if not hasattr(_register_morpho_tools, "_shared_engine"):
+                _register_morpho_tools._shared_engine = GrowthEngine(_client())  # type: ignore[attr-defined]
+            return _register_morpho_tools._shared_engine  # type: ignore[attr-defined]
+
+        def _sim() -> PositionSimulator:
+            if not hasattr(_register_morpho_tools, "_shared_sim"):
+                _register_morpho_tools._shared_sim = PositionSimulator(_client())  # type: ignore[attr-defined]
+            return _register_morpho_tools._shared_sim  # type: ignore[attr-defined]
+
+        _safe_register(reg, "morpho.list_markets", lambda: _client().list_markets())
         _safe_register(reg, "morpho.market_state",
-                       lambda market_name: _client.get_market_state(market_name))
+                       lambda market_name: _client().get_market_state(market_name))
         _safe_register(reg, "morpho.position",
-                       lambda market_name: _client.get_position(market_name))
+                       lambda market_name: _client().get_position(market_name))
         _safe_register(reg, "morpho.health_factor",
-                       lambda market_name: _client.health_factor(market_name))
+                       lambda market_name: _client().health_factor(market_name))
         _safe_register(reg, "morpho.liquidation_price",
-                       lambda market_name: _client.liquidation_price(market_name))
+                       lambda market_name: _client().liquidation_price(market_name))
         _safe_register(reg, "morpho.market_apy",
-                       lambda market_name: _client.market_apy(market_name))
+                       lambda market_name: _client().market_apy(market_name))
         _safe_register(reg, "morpho.supply",
-                       lambda market_name, assets, dry_run=True: _client.supply(market_name, assets, dry_run=dry_run))
+                       lambda market_name, assets, dry_run=True: _client().supply(market_name, assets, dry_run=dry_run))
         _safe_register(reg, "morpho.borrow",
-                       lambda market_name, assets, dry_run=True: _client.borrow(market_name, assets, dry_run=dry_run))
+                       lambda market_name, assets, dry_run=True: _client().borrow(market_name, assets, dry_run=dry_run))
         _safe_register(reg, "morpho.repay",
-                       lambda market_name, assets=None, dry_run=True: _client.repay(market_name, assets, dry_run=dry_run))
+                       lambda market_name, assets=None, dry_run=True: _client().repay(market_name, assets, dry_run=dry_run))
         _safe_register(reg, "morpho.withdraw",
-                       lambda market_name, assets, dry_run=True: _client.withdraw(market_name, assets, dry_run=dry_run))
+                       lambda market_name, assets, dry_run=True: _client().withdraw(market_name, assets, dry_run=dry_run))
         _safe_register(reg, "morpho.supply_collateral",
-                       lambda market_name, assets, dry_run=True: _client.supply_collateral(market_name, assets, dry_run=dry_run))
+                       lambda market_name, assets, dry_run=True: _client().supply_collateral(market_name, assets, dry_run=dry_run))
         _safe_register(reg, "morpho.simulate",
-                       lambda market_name, horizon_days=30.0: _sim.project(market_name, horizon_days))
+                       lambda market_name, horizon_days=30.0: _sim().project(market_name, horizon_days))
         _safe_register(reg, "morpho.compare_markets",
-                       lambda horizon_days=30.0: _sim.compare_markets(horizon_days))
+                       lambda horizon_days=30.0: _sim().compare_markets(horizon_days))
         _safe_register(reg, "morpho.growth_cycle",
                        lambda market_name, collateral_assets, dry_run=True:
-                       _engine.run_growth_cycle(market_name, collateral_assets, dry_run=dry_run))
+                       _engine().run_growth_cycle(market_name, collateral_assets, dry_run=dry_run))
         _safe_register(reg, "morpho.monitor",
-                       lambda market_name: _engine.monitor_and_rebalance(market_name))
+                       lambda market_name: _engine().monitor_and_rebalance(market_name))
         _safe_register(reg, "morpho.growth_grade",
-                       lambda: _engine.growth_grade)
+                       lambda: _engine().growth_grade)
 
     except Exception:
         logger.exception("Failed to register Morpho tools — continuing without them.")

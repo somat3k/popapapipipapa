@@ -382,13 +382,13 @@ class ChatAgent(BaseAgent):
         if sub == "apy":
             market = parts[2] if len(parts) > 2 else "WETH/USDC_E-86"
             try:
-                apy = self.tools.call("morpho.market_apy", market_name=market)
-                if isinstance(apy, dict) and "supply_apy" in apy:
+                apy_data = self.tools.call("morpho.market_apy", market_name=market)
+                if isinstance(apy_data, dict) and "supply_apy" in apy_data:
                     return (
                         f"Market {market} APY:\n"
-                        f"  Supply APY: {apy['supply_apy'] * 100:.2f}%\n"
-                        f"  Borrow APY: {apy['borrow_apy'] * 100:.2f}%\n"
-                        f"  Utilisation: {apy.get('utilisation', 0) * 100:.1f}%"
+                        f"  Supply APY: {apy_data['supply_apy'] * 100:.2f}%\n"
+                        f"  Borrow APY: {apy_data['borrow_apy'] * 100:.2f}%\n"
+                        f"  Utilisation: {apy_data.get('utilisation', 0) * 100:.1f}%"
                     )
             except Exception:
                 pass

@@ -461,6 +461,16 @@ class MorphoBlueClient:
             "utilisation": state.utilisation,
         }
 
+    def get_collateral_price(self, token_symbol: str) -> float:
+        """Return the current price of *token_symbol* in USD.
+
+        In mock mode, reads from the internal price map.  In production
+        this should query an oracle or price feed.
+        """
+        if hasattr(self._provider, "get_price"):
+            return self._provider.get_price(token_symbol)
+        return 1.0
+
     def list_markets(self) -> list[MarketConfig]:
         return self._registry.list_markets()
 

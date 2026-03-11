@@ -11,13 +11,15 @@ All functions return structured dicts and are safe to call repeatedly.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# Simple TTL cache
+# Thread-safe TTL cache
 _CACHE: dict[str, tuple[float, Any]] = {}
+_CACHE_LOCK = threading.Lock()
 CACHE_TTL = 30.0  # seconds
 
 COINGECKO_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
@@ -45,14 +47,16 @@ COINGECKO_IDS: dict[str, str] = {
 
 
 def _cache_get(key: str) -> Optional[Any]:
-    entry = _CACHE.get(key)
+    with _CACHE_LOCK:
+        entry = _CACHE.get(key)
     if entry and (time.time() - entry[0]) < CACHE_TTL:
         return entry[1]
     return None
 
 
 def _cache_set(key: str, value: Any) -> None:
-    _CACHE[key] = (time.time(), value)
+    with _CACHE_LOCK:
+        _CACHE[key] = (time.time(), value)
 
 
 def _http_get(url: str, params: Optional[dict] = None) -> dict[str, Any]:

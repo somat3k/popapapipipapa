@@ -168,9 +168,15 @@ def get_funding_history(coin: str, start_time: int, end_time: Optional[int] = No
 def _sign_l1_action(private_key: str, action: dict, vault_address: Optional[str], nonce: int) -> dict[str, Any]:
     """Sign a Hyperliquid L1 action using the agent's private key.
 
-    Hyperliquid uses a specific signing scheme based on EIP-712 and keccak256.
-    For full production use, integrate with the official `hyperliquid-python-sdk`.
-    This implementation provides the structural pattern.
+    .. warning::
+        This is a **structural placeholder** using a simple message hash.
+        Hyperliquid requires EIP-712 structured-data signing with a specific
+        domain separator.  For production use, integrate the official
+        ``hyperliquid-python-sdk`` (``pip install hyperliquid-python-sdk``),
+        which implements the correct signing scheme.  Signatures produced by
+        this function **will be rejected** by the live exchange.
+
+    See also: https://github.com/hyperliquid-dex/hyperliquid-python-sdk
     """
     try:
         from eth_account import Account  # type: ignore
