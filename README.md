@@ -2,7 +2,7 @@
 
 ## Streamlit dashboard
 
-Run the mobile-inspired admin dashboard with:
+Run the AbbiTower AI command dashboard with:
 
 ```bash
 pip install -r requirements.txt
