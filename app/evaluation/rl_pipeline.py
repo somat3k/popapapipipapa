@@ -469,6 +469,8 @@ class IterationResult:
     letter_grade: str
     policy_update_metrics: Optional[Dict[str, float]]
     elapsed_s: float
+    test_set_metrics: Dict[str, float] = field(default_factory=dict)
+    test_set_bars: int = 0
 
 
 class RLPipeline:
@@ -566,6 +568,9 @@ class RLPipeline:
             )
             score = eval_metrics.composite_score()
             grade = eval_metrics.letter_grade()
+            report = eval_metrics.full_report()
+            report["composite_score"] = round(score, 4)
+            report["letter_grade"] = grade
             ep_return = (
                 float(env.equity_curve[-1] / self.initial_capital - 1.0)
                 if env.equity_curve
@@ -590,6 +595,8 @@ class RLPipeline:
                 letter_grade=grade,
                 policy_update_metrics=policy_metrics,
                 elapsed_s=round(elapsed, 3),
+                test_set_metrics=report,
+                test_set_bars=len(episode_bars),
             )
             self._history.append(result)
 
@@ -634,6 +641,8 @@ class RLPipeline:
                     "episode_return_pct": r.episode_return_pct,
                     "total_reward": r.episode_total_reward,
                     "elapsed_s": r.elapsed_s,
+                    "test_set_bars": r.test_set_bars,
+                    "test_set_metrics": r.test_set_metrics,
                 }
                 for r in self._history
             ],

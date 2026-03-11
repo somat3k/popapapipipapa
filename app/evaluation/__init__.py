@@ -45,6 +45,8 @@ from app.evaluation.defi_strategy import (
     PositionStatus,
     StrategyAction,
 )
+from app.evaluation.test_set_scoring import run_test_set_scoring
+from app.evaluation.test_set_storage import TestSetScoreStore, TrainingRunRecord
 
 __all__ = [
     # data_loader
@@ -74,4 +76,8 @@ __all__ = [
     "MarketEntryAdvisor",
     "PositionStatus",
     "StrategyAction",
+    # test-set scoring
+    "run_test_set_scoring",
+    "TestSetScoreStore",
+    "TrainingRunRecord",
 ]
