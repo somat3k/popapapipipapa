@@ -56,6 +56,9 @@ _CG_MARKET_URL = (
 
 _SUPPORTED_TIMEFRAMES: Tuple[str, ...] = ("1h", "4h", "1d")
 
+# Delay between successive CoinGecko API requests to stay within rate limits
+_API_RATE_LIMIT_DELAY = 0.10  # seconds
+
 
 class OHLCVLoader:
     """Load OHLCV bars for a given instrument from multiple sources.
@@ -236,7 +239,7 @@ class OHLCVLoader:
         for sym in symbols:
             result[sym] = self.fetch_from_api(sym, days=days, timeframe=timeframe)
             # Small delay to respect rate limits when hitting real API
-            time.sleep(0.1)
+            time.sleep(_API_RATE_LIMIT_DELAY)
         return result
 
     def fetch_multi_timeframe(

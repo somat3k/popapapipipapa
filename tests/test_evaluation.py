@@ -116,10 +116,10 @@ class TestOHLCVLoader:
         assert len(bars) == 10
         assert bars[0].close == pytest.approx(102.0)
 
-    def test_load_from_csv_missing_file(self):
+    def test_load_from_csv_missing_file(self, tmp_path):
         from app.evaluation.data_loader import OHLCVLoader
         with pytest.raises(FileNotFoundError):
-            OHLCVLoader().load_from_csv(Path("/tmp/nonexistent_file.csv"))
+            OHLCVLoader().load_from_csv(tmp_path / "nonexistent_file.csv")
 
     def test_fetch_multi_returns_dict(self, monkeypatch):
         from app.evaluation import data_loader

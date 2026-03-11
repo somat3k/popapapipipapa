@@ -86,6 +86,12 @@ REWARD_MILESTONE = 2.0    # account milestone crossed
 PENALTY_DRAWDOWN = -0.5   # per-period drawdown penalty
 PENALTY_DANGER_HF = -1.0  # health factor in danger zone
 
+# Scale factor for per-step return contributions to the reward signal
+_RETURN_SCALE = 100.0
+
+# Minimum number of bars required to build a meaningful training dataset
+MIN_TRAINING_BARS = 20
+
 
 # ---------------------------------------------------------------------------
 # Environment
@@ -191,11 +197,11 @@ class RLEnvironment:
         hf = self._simulate_hf(price_return)
         self._health_factors.append(hf)
 
-        # Compute reward
-        reward = self._compute_reward(trade_return, hf, i)
+        # Update growth tracker (single update per step)
+        milestone = self._tracker.update(i, trade_return)
 
-        # Update growth tracker
-        self._tracker.update(i, trade_return)
+        # Compute reward
+        reward = self._compute_reward(trade_return, hf, milestone is not None)
 
         self._step += 1
         done = self._step >= self._n - 1
@@ -285,16 +291,16 @@ class RLEnvironment:
         return max(0.5, float(hf))  # floor at 0.5 to avoid numerical issues
 
     def _compute_reward(
-        self, trade_return: float, hf: float, period: int
+        self, trade_return: float, hf: float, milestone_crossed: bool
     ) -> float:
         """Composite reward function."""
         reward = 0.0
 
         # 1. Trading return signal
         if trade_return > 0:
-            reward += REWARD_WIN * trade_return * 100
+            reward += REWARD_WIN * trade_return * _RETURN_SCALE
         else:
-            reward += PENALTY_DRAWDOWN * abs(trade_return) * 100
+            reward += PENALTY_DRAWDOWN * abs(trade_return) * _RETURN_SCALE
 
         # 2. Health-factor bonus/penalty
         if hf >= 2.0:
@@ -302,9 +308,8 @@ class RLEnvironment:
         elif hf < 1.0:
             reward += PENALTY_DANGER_HF
 
-        # 3. Milestone bonus
-        m = self._tracker.update(period, trade_return)
-        if m is not None:
+        # 3. Milestone bonus (already computed in step())
+        if milestone_crossed:
             reward += REWARD_MILESTONE
 
         return float(reward)
@@ -506,8 +511,8 @@ class RLPipeline:
         )
 
         # Early exit if there is not enough data to train
-        if len(self.bars) < 20:
-            return {"error": "Insufficient data for training (need ≥ 20 bars)."}
+        if len(self.bars) < MIN_TRAINING_BARS:
+            return {"error": f"Insufficient data for training (need ≥ {MIN_TRAINING_BARS} bars)."}
 
         # Build feature matrix and labels from the full bar dataset
         X, y = self._build_dataset(self.bars)

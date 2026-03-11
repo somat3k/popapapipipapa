@@ -498,11 +498,11 @@ class MarketEntryAdvisor:
         if last_rsi > self.bull_exit_rsi_threshold:
             return "exit"
 
-        # Intermediate zone: look at price trend
-        ema_short = float(np.mean(closes[-20:]))
-        ema_long = float(np.mean(closes[-50:])) if len(closes) >= 50 else ema_short
+        # Intermediate zone: look at price trend using simple moving averages
+        sma_short = float(np.mean(closes[-20:]))
+        sma_long = float(np.mean(closes[-50:])) if len(closes) >= 50 else sma_short
 
-        if ema_short > ema_long:
+        if sma_short > sma_long:
             return "hold"
         return "reduce"
 

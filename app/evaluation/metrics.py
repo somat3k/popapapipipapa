@@ -53,6 +53,25 @@ HF_GRADE_THRESHOLDS: Dict[str, float] = {
     "C":  1.0,
 }
 
+# Normalisation cap for Sharpe ratio in composite score.
+# A Sharpe of 3.0 is considered excellent; values above this are capped at 1.0.
+_SHARPE_NORM_CAP = 3.0
+
+# Composite score component weights (must sum to 1.0):
+#   hf_adjusted_sharpe — captures risk-adjusted return with DeFi safety penalty
+#   cagr               — absolute growth metric
+#   win_rate           — consistency of positive periods
+#   health_factor_score — penalises near-liquidation operation
+#   ic_norm            — model predictive quality
+_W_SHARPE  = 0.25
+_W_CAGR    = 0.25
+_W_WIN     = 0.20
+_W_HF      = 0.15
+_W_IC      = 0.15
+
+# Fraction of the target annual growth rate required to be "on track"
+_ON_TRACK_THRESHOLD = 0.75
+
 
 def health_factor_grade(hf: float) -> str:
     """Return the health-factor grade string."""
@@ -285,18 +304,18 @@ class AgentEvaluationMetrics:
           0.15 × health_factor_score
           0.15 × (1 + IC) / 2  (IC normalised to [0, 1])
         """
-        sharpe_norm = max(0.0, min(1.0, self.hf_adjusted_sharpe() / 3.0))
+        sharpe_norm = max(0.0, min(1.0, self.hf_adjusted_sharpe() / _SHARPE_NORM_CAP))
         cagr_norm = max(0.0, min(1.0, self.cagr()))
         wr = self.win_rate()
         hf_score = self.health_factor_score()
         ic_norm = (self.information_coefficient() + 1.0) / 2.0
 
         return (
-            0.25 * sharpe_norm
-            + 0.25 * cagr_norm
-            + 0.20 * wr
-            + 0.15 * hf_score
-            + 0.15 * ic_norm
+            _W_SHARPE * sharpe_norm
+            + _W_CAGR * cagr_norm
+            + _W_WIN * wr
+            + _W_HF * hf_score
+            + _W_IC * ic_norm
         )
 
     def letter_grade(self) -> str:
@@ -453,8 +472,12 @@ class AccountGrowthTracker:
         return float(cum ** (1.0 / years) - 1.0)
 
     def is_on_track(self, target_annual_growth: float = 0.20) -> bool:
-        """Return True if current CAGR is on track for *target_annual_growth*."""
-        return self.cagr() >= target_annual_growth * 0.75  # 75% of target
+        """Return True if current CAGR is on track for *target_annual_growth*.
+
+        The account is considered "on track" when the current CAGR is at least
+        ``_ON_TRACK_THRESHOLD`` (75%) of the target rate.
+        """
+        return self.cagr() >= target_annual_growth * _ON_TRACK_THRESHOLD
 
     def summary(self) -> Dict[str, Any]:
         n = len(self._history)

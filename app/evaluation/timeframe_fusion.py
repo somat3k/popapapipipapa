@@ -50,6 +50,9 @@ from app.trading.algorithms import (
 
 logger = logging.getLogger(__name__)
 
+# Small epsilon for avoiding division-by-zero in weighted normalisation
+_EPSILON = 1e-12
+
 # Default timeframe weights — higher timeframes carry more structural authority
 DEFAULT_TF_WEIGHTS: Dict[str, float] = {
     "1w": 5.0,
@@ -160,7 +163,7 @@ class TimeframeFuser:
             top = neutral
 
         # Confidence: proportion of total weight going to winning side
-        confidence = top / (total_weight + 1e-12)
+        confidence = top / (total_weight + _EPSILON)
 
         # Agreement: fraction of layers whose signal matches the direction
         agreeing = sum(
