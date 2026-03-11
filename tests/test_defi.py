@@ -234,3 +234,42 @@ def test_position_is_liquidatable_under_hf1():
     prov.borrow(MARKET_WMATIC_USDC, wallet, 100.0)
     pos = prov.get_position(MARKET_WMATIC_USDC, wallet)
     assert pos.is_liquidatable()
+
+
+# ---------------------------------------------------------------------------
+# Swap route validation tests
+# ---------------------------------------------------------------------------
+
+def test_collateral_swap_valid_route(funded_client):
+    """Swap succeeds when a valid route is specified in swap_routes.json."""
+    funded_client.borrow(MARKET_WMATIC_USDC, 200.0)
+    result = funded_client.collateral_swap(
+        MARKET_WMATIC_USDC, 50.0,
+        from_token="WPOL", to_token="USDC_E",
+        dry_run=True,
+    )
+    assert result["success"]
+    assert result["dry_run"]
+    assert "slippage_pct" in result
+
+
+def test_collateral_swap_invalid_route_rejected(funded_client):
+    """Swap is rejected when no matching route exists in swap_routes.json."""
+    funded_client.borrow(MARKET_WMATIC_USDC, 200.0)
+    result = funded_client.collateral_swap(
+        MARKET_WMATIC_USDC, 50.0,
+        from_token="WETH", to_token="DAI",  # not in swap_routes.json
+    )
+    assert not result["success"]
+    assert "No collateral swap route" in result["error"]
+
+
+def test_known_markets_populated_from_json():
+    """KNOWN_MARKETS contains real market IDs loaded from config/markets.json."""
+    from app.defi.morpho import KNOWN_MARKETS
+
+    # All IDs sourced from the morpho registry should be proper hex strings
+    for name, market_id in KNOWN_MARKETS.items():
+        assert market_id.startswith("0x"), f"Market {name!r} ID not a hex string"
+        # keccak256 hash = 32 bytes = 64 hex chars + "0x" prefix → 66 chars
+        assert len(market_id) == 66, f"Market {name!r} ID wrong length"

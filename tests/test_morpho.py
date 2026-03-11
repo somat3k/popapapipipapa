@@ -394,3 +394,123 @@ def test_position_simulator_what_if_price_drop_with_borrow():
     result = sim.what_if_price_drop("WETH/USDC_E-86", price_drop_pct=50.0)
     assert "new_health_factor" in result
     assert "liquidatable" in result
+
+
+# ---------------------------------------------------------------------------
+# JSON config loading tests
+# ---------------------------------------------------------------------------
+
+def test_contracts_loaded_from_json():
+    """Verify that contract constants are sourced from config/contracts.json."""
+    import json
+    import pathlib
+
+    cfg_path = pathlib.Path(__file__).parent.parent / "config" / "contracts.json"
+    with open(cfg_path) as fh:
+        cfg = json.load(fh)
+
+    assert MORPHO_BLUE_POLYGON == cfg["morpho_blue_polygon"]
+    assert POLYGON_CHAIN_ID == cfg["polygon_chain_id"]
+    assert POLYGON_RPC_URLS == cfg["polygon_rpc_urls"]
+
+
+def test_tokens_loaded_from_json():
+    """Verify that token addresses/decimals are sourced from config/tokens.json."""
+    import json
+    import pathlib
+
+    cfg_path = pathlib.Path(__file__).parent.parent / "config" / "tokens.json"
+    with open(cfg_path) as fh:
+        tokens = json.load(fh)
+
+    for sym, info in tokens.items():
+        if sym.startswith("_"):
+            continue
+        assert TOKEN_ADDRESSES[sym] == info["address"]
+        assert TOKEN_DECIMALS[sym] == info["decimals"]
+
+
+def test_collateral_tokens_from_json():
+    """COLLATERAL_TOKENS contains exactly the tokens marked collateral: true."""
+    import json
+    import pathlib
+    from morpho.contracts import COLLATERAL_TOKENS
+
+    cfg_path = pathlib.Path(__file__).parent.parent / "config" / "tokens.json"
+    with open(cfg_path) as fh:
+        tokens = json.load(fh)
+
+    expected = {sym for sym, info in tokens.items()
+                if not sym.startswith("_") and info.get("collateral")}
+    assert set(COLLATERAL_TOKENS.keys()) == expected
+
+
+def test_markets_loaded_from_json():
+    """MarketRegistry default markets match config/markets.json."""
+    import json
+    import pathlib
+
+    cfg_path = pathlib.Path(__file__).parent.parent / "config" / "markets.json"
+    with open(cfg_path) as fh:
+        market_defs = json.load(fh)
+
+    reg = MarketRegistry()
+    json_names = {d["name"] for d in market_defs if "name" in d}
+    registry_names = {m.name for m in reg.list_markets()}
+    assert json_names == registry_names
+
+
+def test_collateral_swap_routes_from_json():
+    """COLLATERAL_SWAP_ROUTES is populated from config/swap_routes.json."""
+    import json
+    import pathlib
+    from morpho.markets import COLLATERAL_SWAP_ROUTES
+
+    cfg_path = pathlib.Path(__file__).parent.parent / "config" / "swap_routes.json"
+    with open(cfg_path) as fh:
+        cfg = json.load(fh)
+
+    assert COLLATERAL_SWAP_ROUTES == cfg["collateral_swap_routes"]
+
+
+def test_borrow_token_swap_routes_from_json():
+    """BORROW_TOKEN_SWAP_ROUTES is populated from config/swap_routes.json."""
+    import json
+    import pathlib
+    from morpho.markets import BORROW_TOKEN_SWAP_ROUTES
+
+    cfg_path = pathlib.Path(__file__).parent.parent / "config" / "swap_routes.json"
+    with open(cfg_path) as fh:
+        cfg = json.load(fh)
+
+    assert BORROW_TOKEN_SWAP_ROUTES == cfg["borrow_token_swap_routes"]
+
+
+def test_get_collateral_swap_route_found():
+    from morpho.markets import get_collateral_swap_route
+
+    route = get_collateral_swap_route("WETH", "USDC_E")
+    assert route is not None
+    assert route["from_token"] == "WETH"
+    assert route["to_token"] == "USDC_E"
+    assert route["slippage_pct"] > 0
+
+
+def test_get_collateral_swap_route_not_found():
+    from morpho.markets import get_collateral_swap_route
+
+    assert get_collateral_swap_route("WETH", "DAI") is None
+
+
+def test_get_borrow_token_swap_route_found():
+    from morpho.markets import get_borrow_token_swap_route
+
+    route = get_borrow_token_swap_route("USDC_E", "USDC")
+    assert route is not None
+    assert route["slippage_pct"] > 0
+
+
+def test_get_borrow_token_swap_route_not_found():
+    from morpho.markets import get_borrow_token_swap_route
+
+    assert get_borrow_token_swap_route("WETH", "WBTC") is None

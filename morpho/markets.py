@@ -3,13 +3,18 @@
 Market ID = keccak256(abi.encode(MarketParams)), where MarketParams is
 (loanToken, collateralToken, oracle, irm, lltv) packed as 5 × 32-byte words.
 
+Default markets are loaded at import time from ``config/markets.json``
+in the project root.
+
 Reference: https://docs.morpho.org/morpho-blue/contracts/market-id
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+import pathlib
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -21,6 +26,8 @@ from .contracts import (
 )
 
 logger = logging.getLogger(__name__)
+
+_CONFIG_DIR = pathlib.Path(__file__).parent.parent / "config"
 
 # Morpho Blue LLTV values (in WAD = 1e18 denominator)
 # Common LLTVs: 62.5%, 77%, 86%, 91.5%, 94.5%, 96.5%, 98%
@@ -176,72 +183,30 @@ class MarketRegistry:
         self._populate_defaults()
 
     def _populate_defaults(self) -> None:
-        default_markets = [
-            # USDC.e loan markets
-            MarketConfig(
-                name="WETH/USDC_E-86",
-                loan_token_symbol="USDC_E",
-                collateral_token_symbol="WETH",
-                loan_token=TOKEN_ADDRESSES["USDC_E"],
-                collateral_token=TOKEN_ADDRESSES["WETH"],
-                oracle=ORACLE_ADDRESSES["WETH_USD"],
+        markets_path = _CONFIG_DIR / "markets.json"
+        with open(markets_path, encoding="utf-8") as fh:
+            market_defs = json.load(fh)
+
+        for defn in market_defs:
+            # Skip JSON comment-only entries (keys that all start with "_")
+            if not any(k for k in defn if not k.startswith("_")):
+                continue
+            if "name" not in defn:
+                continue
+            lltv_pct = defn["lltv_pct"]
+            lltv = int(lltv_pct / 100 * WAD)
+            m = MarketConfig(
+                name=defn["name"],
+                loan_token_symbol=defn["loan_token_symbol"],
+                collateral_token_symbol=defn["collateral_token_symbol"],
+                loan_token=TOKEN_ADDRESSES[defn["loan_token_symbol"]],
+                collateral_token=TOKEN_ADDRESSES[defn["collateral_token_symbol"]],
+                oracle=ORACLE_ADDRESSES[defn["oracle_key"]],
                 irm=IRM_ADDRESS,
-                lltv=LLTV_86,
-                description="WETH collateral, USDC.e loan, 86% LLTV",
-                tags=["stable-borrow", "eth-collateral"],
-            ),
-            MarketConfig(
-                name="WBTC/USDC_E-86",
-                loan_token_symbol="USDC_E",
-                collateral_token_symbol="WBTC",
-                loan_token=TOKEN_ADDRESSES["USDC_E"],
-                collateral_token=TOKEN_ADDRESSES["WBTC"],
-                oracle=ORACLE_ADDRESSES["WBTC_USD"],
-                irm=IRM_ADDRESS,
-                lltv=LLTV_86,
-                description="WBTC collateral, USDC.e loan, 86% LLTV",
-                tags=["stable-borrow", "btc-collateral"],
-            ),
-            MarketConfig(
-                name="WPOL/USDC_E-77",
-                loan_token_symbol="USDC_E",
-                collateral_token_symbol="WPOL",
-                loan_token=TOKEN_ADDRESSES["USDC_E"],
-                collateral_token=TOKEN_ADDRESSES["WPOL"],
-                oracle=ORACLE_ADDRESSES["WPOL_USD"],
-                irm=IRM_ADDRESS,
-                lltv=LLTV_77,
-                description="WPOL collateral, USDC.e loan, 77% LLTV",
-                tags=["stable-borrow", "pol-collateral"],
-            ),
-            # Native USDC loan markets
-            MarketConfig(
-                name="WETH/USDC-86",
-                loan_token_symbol="USDC",
-                collateral_token_symbol="WETH",
-                loan_token=TOKEN_ADDRESSES["USDC"],
-                collateral_token=TOKEN_ADDRESSES["WETH"],
-                oracle=ORACLE_ADDRESSES["WETH_USD"],
-                irm=IRM_ADDRESS,
-                lltv=LLTV_86,
-                description="WETH collateral, native USDC loan, 86% LLTV",
-                tags=["stable-borrow", "eth-collateral", "native-usdc"],
-            ),
-            # Yield-bearing collateral markets
-            MarketConfig(
-                name="stMATIC/USDC_E-625",
-                loan_token_symbol="USDC_E",
-                collateral_token_symbol="stMATIC",
-                loan_token=TOKEN_ADDRESSES["USDC_E"],
-                collateral_token=TOKEN_ADDRESSES["stMATIC"],
-                oracle=ORACLE_ADDRESSES["WPOL_USD"],
-                irm=IRM_ADDRESS,
-                lltv=LLTV_625,
-                description="stMATIC collateral, USDC.e loan, 62.5% LLTV",
-                tags=["yield-collateral", "lsd"],
-            ),
-        ]
-        for m in default_markets:
+                lltv=lltv,
+                description=defn.get("description", ""),
+                tags=defn.get("tags", []),
+            )
             self._markets[m.name] = m
             logger.debug("Registered market: %s (id=%s)", m.name, m.market_id[:10])
 
@@ -266,6 +231,44 @@ class MarketRegistry:
 
     def __len__(self) -> int:
         return len(self._markets)
+
+
+# ---------------------------------------------------------------------------
+# Swap route registry — loaded from config/swap_routes.json
+# ---------------------------------------------------------------------------
+
+def _load_swap_routes() -> dict:
+    """Load swap route definitions from config/swap_routes.json."""
+    path = _CONFIG_DIR / "swap_routes.json"
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+_swap_routes_cfg = _load_swap_routes()
+
+# List of dicts: {from_token, to_token, slippage_pct, description}
+COLLATERAL_SWAP_ROUTES: list[dict] = _swap_routes_cfg["collateral_swap_routes"]
+BORROW_TOKEN_SWAP_ROUTES: list[dict] = _swap_routes_cfg["borrow_token_swap_routes"]
+
+
+def get_collateral_swap_route(
+    from_token: str, to_token: str
+) -> Optional[dict]:
+    """Return the swap route config for a collateral → loan token swap, or None."""
+    for route in COLLATERAL_SWAP_ROUTES:
+        if route["from_token"] == from_token and route["to_token"] == to_token:
+            return route
+    return None
+
+
+def get_borrow_token_swap_route(
+    from_token: str, to_token: str
+) -> Optional[dict]:
+    """Return the swap route config for a borrow token → token swap, or None."""
+    for route in BORROW_TOKEN_SWAP_ROUTES:
+        if route["from_token"] == from_token and route["to_token"] == to_token:
+            return route
+    return None
 
 
 # Module-level default registry

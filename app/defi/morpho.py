@@ -3,6 +3,10 @@
 Provides MorphoClient with supply, borrow, repay, withdraw, and
 collateral swap operations. Uses Web3.py when available; falls back
 to a mock provider for offline use / testing.
+
+Known markets and swap routes are loaded from the project-level
+``config/markets.json`` and ``config/swap_routes.json`` files via the
+``morpho`` package, so no addresses or route lists are hardcoded here.
 """
 
 from __future__ import annotations
@@ -11,21 +15,29 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from morpho.markets import (
+    DEFAULT_REGISTRY,
+    get_collateral_swap_route,
+)
+
 logger = logging.getLogger(__name__)
 
-# Morpho Blue on Polygon (mainnet)
-MORPHO_BLUE_ADDRESS = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
-
-# Market IDs (example placeholders — real IDs are keccak256 hashes)
-MARKET_WMATIC_USDC = "0x" + "a1" * 32
-MARKET_WETH_USDC = "0x" + "b2" * 32
-MARKET_WBTC_USDC = "0x" + "c3" * 32
-
+# Market IDs and the known-markets map are derived from the JSON-backed
+# DEFAULT_REGISTRY so that all addresses live in config/markets.json.
 KNOWN_MARKETS: Dict[str, str] = {
-    "WMATIC/USDC": MARKET_WMATIC_USDC,
-    "WETH/USDC": MARKET_WETH_USDC,
-    "WBTC/USDC": MARKET_WBTC_USDC,
+    m.name: m.market_id for m in DEFAULT_REGISTRY.list_markets()
 }
+
+# Backward-compatible market ID aliases (map legacy names → real IDs from registry).
+# WMATIC was renamed to WPOL; aliases preserve existing call-sites and tests.
+MARKET_WMATIC_USDC: str = KNOWN_MARKETS.get("WPOL/USDC_E-77", "")
+MARKET_WETH_USDC: str = KNOWN_MARKETS.get("WETH/USDC_E-86", "")
+MARKET_WBTC_USDC: str = KNOWN_MARKETS.get("WBTC/USDC_E-86", "")
+
+# Expose legacy short-names in KNOWN_MARKETS for backward compatibility.
+KNOWN_MARKETS["WMATIC/USDC"] = MARKET_WMATIC_USDC
+KNOWN_MARKETS["WETH/USDC"] = MARKET_WETH_USDC
+KNOWN_MARKETS["WBTC/USDC"] = MARKET_WBTC_USDC
 
 
 # ---------------------------------------------------------------------------
@@ -225,20 +237,49 @@ class MorphoClient:
         self,
         market_id: str,
         swap_amount: float,
+        from_token: str = "",
+        to_token: str = "",
         min_received: float = 0.0,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """Reduce borrowed amount via a collateral swap.
 
+        The swap route (from_token → to_token) is validated against the
+        routes defined in ``config/swap_routes.json``.  The slippage
+        tolerance is taken from the matching route entry; if no route is
+        found the operation is rejected.
+
         Flow
         ----
-        1. Fetch current position.
-        2. Simulate swap: *swap_amount* of collateral → loan token.
-        3. Use received loan tokens to repay part of the borrow.
-        4. If *dry_run* is False, execute on-chain.
+        1. Validate that a collateral swap route exists for the given pair.
+        2. Fetch current position.
+        3. Simulate swap: *swap_amount* of collateral → loan token using
+           the route's configured slippage.
+        4. Use received loan tokens to repay part of the borrow.
+        5. If *dry_run* is False, execute on-chain.
 
         Returns a summary dict with before/after position details.
         """
+        # When from_token/to_token are supplied the route is validated against
+        # config/swap_routes.json and its configured slippage is applied.
+        # Omitting both token symbols bypasses route validation (useful for
+        # programmatic callers that already know the market's token pair) and
+        # falls back to a conservative 0.5% slippage assumption.
+        route = None
+        if from_token and to_token:
+            route = get_collateral_swap_route(from_token, to_token)
+            if route is None:
+                return {
+                    "success": False,
+                    "error": (
+                        f"No collateral swap route from '{from_token}' to '{to_token}'. "
+                        "Check config/swap_routes.json."
+                    ),
+                }
+
+        # Use route slippage when available; otherwise fall back to 0.5%
+        slippage = route["slippage_pct"] / 100 if route else 0.005
+
         pos_before = self.get_position(market_id)
         if pos_before.collateral < swap_amount:
             return {
@@ -246,8 +287,8 @@ class MorphoClient:
                 "error": f"Insufficient collateral: have {pos_before.collateral}, need {swap_amount}",
             }
 
-        # Simulate swap (using mock 1:1 ratio for simplicity)
-        received = swap_amount * 0.995  # 0.5% slippage
+        # Simulate swap applying the route slippage
+        received = swap_amount * (1 - slippage)
         if received < min_received:
             return {
                 "success": False,
@@ -260,6 +301,7 @@ class MorphoClient:
                 "dry_run": True,
                 "swap_amount": swap_amount,
                 "received": received,
+                "slippage_pct": slippage * 100,
                 "repay_amount": min(received, pos_before.borrow_shares),
                 "projected_borrow_after": max(0.0, pos_before.borrow_shares - received),
             }
