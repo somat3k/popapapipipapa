@@ -1,0 +1,50 @@
+[
+  {
+    "_comment": "USDC.e loan markets",
+    "name": "WETH/USDC_E-86",
+    "loan_token_symbol": "USDC_E",
+    "collateral_token_symbol": "WETH",
+    "oracle_key": "WETH_USD",
+    "lltv_pct": 86.0,
+    "description": "WETH collateral, USDC.e loan, 86% LLTV",
+    "tags": ["stable-borrow", "eth-collateral"]
+  },
+  {
+    "name": "WBTC/USDC_E-86",
+    "loan_token_symbol": "USDC_E",
+    "collateral_token_symbol": "WBTC",
+    "oracle_key": "WBTC_USD",
+    "lltv_pct": 86.0,
+    "description": "WBTC collateral, USDC.e loan, 86% LLTV",
+    "tags": ["stable-borrow", "btc-collateral"]
+  },
+  {
+    "name": "WPOL/USDC_E-77",
+    "loan_token_symbol": "USDC_E",
+    "collateral_token_symbol": "WPOL",
+    "oracle_key": "WPOL_USD",
+    "lltv_pct": 77.0,
+    "description": "WPOL collateral, USDC.e loan, 77% LLTV",
+    "tags": ["stable-borrow", "pol-collateral"]
+  },
+  {
+    "_comment": "Native USDC loan markets",
+    "name": "WETH/USDC-86",
+    "loan_token_symbol": "USDC",
+    "collateral_token_symbol": "WETH",
+    "oracle_key": "WETH_USD",
+    "lltv_pct": 86.0,
+    "description": "WETH collateral, native USDC loan, 86% LLTV",
+    "tags": ["stable-borrow", "eth-collateral", "native-usdc"]
+  },
+  {
+    "_comment": "Yield-bearing collateral markets",
+    "name": "stMATIC/USDC_E-625",
+    "loan_token_symbol": "USDC_E",
+    "collateral_token_symbol": "stMATIC",
+    "oracle_key": "WPOL_USD",
+    "lltv_pct": 62.5,
+    "description": "stMATIC collateral, USDC.e loan, 62.5% LLTV",
+    "tags": ["yield-collateral", "lsd"]
+  }
+]

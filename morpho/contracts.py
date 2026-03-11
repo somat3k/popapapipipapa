@@ -1,6 +1,8 @@
 """Contract addresses and minimal ABIs for Morpho Blue on Polygon.
 
 All addresses are checksummed.  Token decimals are listed for reference.
+Values are loaded at import time from ``config/contracts.json`` and
+``config/tokens.json`` in the project root.
 
 Reference
 ---------
@@ -10,69 +12,68 @@ Reference
 
 from __future__ import annotations
 
+import json
+import pathlib
+
+# ---------------------------------------------------------------------------
+# JSON config loader helpers
+# ---------------------------------------------------------------------------
+
+_CONFIG_DIR = pathlib.Path(__file__).parent.parent / "config"
+
+
+def _load_json(filename: str) -> dict:
+    """Load a JSON file from the project-level config directory."""
+    path = _CONFIG_DIR / filename
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+_contracts_cfg = _load_json("contracts.json")
+_tokens_cfg = _load_json("tokens.json")
+
 # ---------------------------------------------------------------------------
 # Morpho Blue — deployed at the same address across EVM chains
 # ---------------------------------------------------------------------------
 
-MORPHO_BLUE_POLYGON: str = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
+MORPHO_BLUE_POLYGON: str = _contracts_cfg["morpho_blue_polygon"]
 
 # ---------------------------------------------------------------------------
-# Token addresses on Polygon POS mainnet (chain ID 137)
+# Token addresses and decimals on Polygon POS mainnet (chain ID 137)
+# Loaded from config/tokens.json
 # ---------------------------------------------------------------------------
 
 TOKEN_ADDRESSES: dict[str, str] = {
-    # Bridged USDC (USDC.e)
-    "USDC_E": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
-    # Native USDC
-    "USDC": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
-    # Wrapped ETH
-    "WETH": "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
-    # Wrapped BTC
-    "WBTC": "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6",
-    # Wrapped POL (formerly WMATIC)
-    "WPOL": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
-    # DAI
-    "DAI": "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
-    # USDT
-    "USDT": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
-    # stMATIC (Lido)
-    "stMATIC": "0x3A58a54C066FdC0f2D55FC9C89F0415C92eBf3C4",
-    # MaticX (Stader)
-    "MaticX": "0xfa68FB4628DFF1028CFEc22b4162FCcd0d45efb6",
+    sym: info["address"]
+    for sym, info in _tokens_cfg.items()
+    if not sym.startswith("_")
 }
 
 TOKEN_DECIMALS: dict[str, int] = {
-    "USDC_E": 6,
-    "USDC": 6,
-    "WETH": 18,
-    "WBTC": 8,
-    "WPOL": 18,
-    "DAI": 18,
-    "USDT": 6,
-    "stMATIC": 18,
-    "MaticX": 18,
+    sym: info["decimals"]
+    for sym, info in _tokens_cfg.items()
+    if not sym.startswith("_")
+}
+
+# Tokens that are accepted as Morpho collateral (collateral: true in tokens.json)
+COLLATERAL_TOKENS: dict[str, str] = {
+    sym: info["address"]
+    for sym, info in _tokens_cfg.items()
+    if not sym.startswith("_") and info.get("collateral", False)
 }
 
 # ---------------------------------------------------------------------------
 # Oracle addresses (Chainlink / Morpho Oracle v1.1 on Polygon)
+# Loaded from config/contracts.json
 # ---------------------------------------------------------------------------
 
-ORACLE_ADDRESSES: dict[str, str] = {
-    # Chainlink MATIC/USD
-    "WPOL_USD": "0xAB594600376Ec9fD91F8e885dADF0CE036862dE0",
-    # Chainlink ETH/USD
-    "WETH_USD": "0xF9680D99D6C9589e2a93a78A04A279e509205945",
-    # Chainlink BTC/USD
-    "WBTC_USD": "0xDE31F8bFBD8c84b5360CFACCa3539B938dd78ae6",
-    # Chainlink USDC/USD
-    "USDC_USD": "0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7",
-}
+ORACLE_ADDRESSES: dict[str, str] = _contracts_cfg["oracle_addresses"]
 
 # ---------------------------------------------------------------------------
 # Adaptive IRM (Interest Rate Model) — Morpho's default adaptive IRM
 # ---------------------------------------------------------------------------
 
-IRM_ADDRESS: str = "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC"
+IRM_ADDRESS: str = _contracts_cfg["irm_address"]
 
 # ---------------------------------------------------------------------------
 # Morpho Blue minimal ABI (only the functions we need)
@@ -338,13 +339,8 @@ ERC20_ABI: list[dict] = [
     },
 ]
 
-# Polygon mainnet chain ID
-POLYGON_CHAIN_ID: int = 137
+# Polygon mainnet chain ID — loaded from config/contracts.json
+POLYGON_CHAIN_ID: int = _contracts_cfg["polygon_chain_id"]
 
-# Public RPC endpoints for Polygon (ordered by reliability)
-POLYGON_RPC_URLS: list[str] = [
-    "https://polygon-rpc.com",
-    "https://rpc-mainnet.matic.network",
-    "https://rpc-mainnet.maticvigil.com",
-    "https://polygon.llamarpc.com",
-]
+# Public RPC endpoints for Polygon — loaded from config/contracts.json
+POLYGON_RPC_URLS: list[str] = _contracts_cfg["polygon_rpc_urls"]
