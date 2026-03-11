@@ -46,3 +46,6 @@ cryptography>=41.0.0
 
 # Logging / observability
 structlog>=23.1.0
+
+# Streamlit dashboard
+streamlit>=1.32.0
