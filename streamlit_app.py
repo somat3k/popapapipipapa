@@ -376,6 +376,16 @@ def login_view() -> None:
     )
 
     demo_mode_enabled = os.getenv("MULTIPLEX_ENABLE_DEMO_MODE", "false").lower() == "true"
+    preview_mode_enabled = (
+        os.getenv("MULTIPLEX_ENABLE_PREVIEW_MODE", "false").lower() == "true"
+    )
+    if demo_mode_enabled and not preview_mode_enabled:
+        st.error(
+            "Demo mode requires preview mode approval. Set "
+            "MULTIPLEX_ENABLE_PREVIEW_MODE=true once the production build is "
+            "ready for demo access."
+        )
+        st.stop()
     user_configured = is_secret_configured("MULTIPLEX_AUTH_USER", "auth", "user")
     password_configured = is_secret_configured(
         "MULTIPLEX_AUTH_PASSWORD",
