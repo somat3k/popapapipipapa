@@ -1,0 +1,28 @@
+# Build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Model checkpoints and artifacts
+checkpoints/
+models/
+htmlcov/
+.coverage
+.pytest_cache/
+*.pkl
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
