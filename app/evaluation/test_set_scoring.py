@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Protocol
 
 from app.evaluation.data_loader import OHLCVLoader
+from app.evaluation.realtime_inference import RealtimeInferenceRunner
 from app.evaluation.rl_pipeline import MIN_TRAINING_BARS, IterationResult, RLPipeline
 from app.evaluation.test_set_storage import TestSetScoreStore
 from app.ml.models import BaseModel
@@ -157,4 +158,44 @@ def run_test_set_scoring(
         "data_source": data_source,
         "total_bars": len(resolved_bars),
         "pipeline": results,
+        "realtime_inference": _run_realtime_inference_check(model, resolved_bars, symbol),
     }
+
+
+def _run_realtime_inference_check(
+    model: BaseModel,
+    bars: List[Bar],
+    symbol: str,
+) -> Dict[str, Any]:
+    """Run a realtime bar-by-bar inference check using the trained model.
+
+    After the RL pipeline has trained *model*, this function streams the most
+    recent bars through the model one-by-one (simulating realtime conditions)
+    and returns aggregated inference statistics.
+
+    Parameters
+    ----------
+    model:
+        The trained model produced by the RL pipeline.
+    bars:
+        Full list of bars available; the last ``min(50, len(bars))`` bars are
+        used as the realtime stream to keep the check fast.
+    symbol:
+        Asset symbol label attached to every published payload.
+
+    Returns
+    -------
+    dict
+        Inference summary (total_bars, signal counts, mean_confidence, elapsed_s)
+        or an ``{"error": ...}`` dict if inference is not possible.
+    """
+    if not model.is_trained or len(bars) < 2:
+        return {"skipped": True, "reason": "model not trained or insufficient bars"}
+    stream_bars = bars[-min(50, len(bars)):]
+    try:
+        runner = RealtimeInferenceRunner(model=model, bars=stream_bars, symbol=symbol)
+        summary = runner.run()
+        return summary.to_dict()
+    except Exception as exc:
+        logger.warning("Realtime inference check failed: %s", exc)
+        return {"error": str(exc)}
