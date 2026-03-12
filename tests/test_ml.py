@@ -253,6 +253,20 @@ def test_equity_health_ensemble_asymmetric_empty_inputs(simple_dataset):
     assert weights.shape == (2,)
 
 
+def test_equity_health_ensemble_handles_non_finite_scores(simple_dataset):
+    X, y = simple_dataset
+    m1 = LinearRegressionModel()
+    m2 = RandomForestModel(n_estimators=5)
+    ens = EquityHealthEnsembleModel([m1, m2])
+    ens.fit(X, y)
+    weights = ens.update_weights(
+        returns=[np.array([np.inf, np.inf]), np.array([0.01, 0.02])],
+        health_factors=[np.array([2.0, 2.0]), np.array([2.0, 2.0])],
+    )
+    assert weights.shape == (2,)
+    assert weights[0] == pytest.approx(weights[1])
+
+
 def test_equity_health_ensemble_handles_mismatched_lengths(simple_dataset):
     X, y = simple_dataset
     m1 = LinearRegressionModel()
