@@ -14,7 +14,7 @@ BOOSTING_MIN_IMPROVEMENT = 0.2
 LSTM_MAX_REGRESSION = 0.05
 
 
-def _seed_torch():
+def _set_torch_seed():
     torch = pytest.importorskip("torch", reason="Torch is required for LSTM scoring.")
     torch.manual_seed(21)
 
@@ -110,7 +110,7 @@ def _run_scoring(model):
     )
 
 
-def test_advanced_models_outperform_baseline():
+def test_advanced_models_meet_performance_thresholds():
     baseline = _run_scoring(LinearRegressionModel(alpha=0.1))
 
     boosted = _run_scoring(
@@ -121,7 +121,7 @@ def test_advanced_models_outperform_baseline():
             random_state=21,
         )
     )
-    _seed_torch()
+    _set_torch_seed()
     lstm = _run_scoring(
         LSTMModel(
             input_size=8,

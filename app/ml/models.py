@@ -261,10 +261,15 @@ class LSTMModel(BaseModel):
             self._trained = True
             return self
 
-        feature_dim = X.shape[-1] if X.ndim >= 2 else 1
+        if X.ndim not in (2, 3):
+            raise ValueError(
+                "[LSTM] Expected 2D or 3D input for training, "
+                f"got shape {X.shape}."
+            )
+        feature_dim = X.shape[-1]
         if feature_dim != self.input_size:
             if self.auto_adjust_input_size:
-                if self._trained or self._input_size_adjusted:
+                if self._trained:
                     logger.warning(
                         "[LSTM] input_size changed from %d to %d; original was %d.",
                         self.input_size,
