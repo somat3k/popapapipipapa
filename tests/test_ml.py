@@ -217,6 +217,20 @@ def test_equity_health_ensemble_weights(simple_dataset):
     assert len(preds) == len(X)
 
 
+def test_equity_health_ensemble_defaults_for_zero_scores(simple_dataset):
+    X, y = simple_dataset
+    m1 = LinearRegressionModel()
+    m2 = RandomForestModel(n_estimators=5)
+    ens = EquityHealthEnsembleModel([m1, m2])
+    ens.fit(X, y)
+    weights = ens.update_weights(
+        returns=[np.array([]), np.array([])],
+        health_factors=[np.array([]), np.array([])],
+    )
+    assert weights.shape == (2,)
+    assert weights[0] == pytest.approx(weights[1])
+
+
 # ---------------------------------------------------------------------------
 # ModelRegistry tests
 # ---------------------------------------------------------------------------

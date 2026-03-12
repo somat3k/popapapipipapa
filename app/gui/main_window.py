@@ -776,9 +776,6 @@ class MLPanel(DarkFrame):
             self._log_msg(f"Model '{model_type}' not yet wired in this demo.")
             return
 
-        if not callable(factory):
-            self._log_msg(f"Model '{model_type}' is not callable.")
-            return
         model = factory()
         self._log_msg(f"Training {model_type} for {epochs} epochs…")
 

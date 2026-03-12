@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 logger = logging.getLogger(__name__)
-EPSILON = 1e-12
+WEIGHT_EPSILON = 1e-12
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +359,15 @@ class EquityHealthEnsembleModel(BaseModel):
             if len(eq) < 2:
                 returns.append(np.array([]))
             else:
-                returns.append(np.diff(eq) / (eq[:-1] + EPSILON))
+                denom = eq[:-1]
+                returns.append(
+                    np.divide(
+                        np.diff(eq),
+                        denom,
+                        out=np.zeros_like(denom),
+                        where=denom != 0,
+                    )
+                )
         return self.update_weights(returns, health_factors, periods_per_year)
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -377,7 +385,7 @@ class EquityHealthEnsembleModel(BaseModel):
     @staticmethod
     def _normalise_weights(raw: List[float]) -> np.ndarray:
         values = np.array(raw, dtype=float)
-        if np.all(values <= 1e-12):
+        if np.all(values <= WEIGHT_EPSILON):
             return np.full(len(values), 1 / len(values))
         return values / np.sum(values)
 
