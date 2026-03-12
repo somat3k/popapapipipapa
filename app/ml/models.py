@@ -257,6 +257,15 @@ class LSTMModel(BaseModel):
             self._trained = True
             return self
 
+        feature_dim = X.shape[-1] if X.ndim >= 2 else 1
+        if feature_dim != self.input_size:
+            logger.info(
+                "[LSTM] Adjusting input_size from %d to %d to match features.",
+                self.input_size,
+                feature_dim,
+            )
+            self.input_size = feature_dim
+
         net = self._build_net()
         if net is None:
             self._trained = True

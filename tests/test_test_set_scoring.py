@@ -7,7 +7,7 @@ from app.evaluation.metrics import AgentEvaluationMetrics
 from app.evaluation.rl_pipeline import IterationResult
 from app.evaluation.test_set_scoring import run_test_set_scoring
 from app.evaluation.test_set_storage import TestSetScoreStore
-from app.ml.models import LinearRegressionModel
+from app.ml.models import GradientBoostingModel, LinearRegressionModel, LSTMModel
 
 
 class DummyMorphoClient:
@@ -87,3 +87,49 @@ def test_run_test_set_scoring_stores_results(tmp_path):
     assert run.total_bars == 120
     assert len(scores) == 1
     assert scores[0]["test_set_bars"] > 0
+
+
+def _run_scoring(model):
+    return run_test_set_scoring(
+        model=model,
+        symbol="ETH",
+        data_source="synthetic",
+        bars_count=160,
+        seed=21,
+        iterations=2,
+        patience=1,
+    )
+
+
+def test_advanced_models_outperform_baseline():
+    try:
+        import torch
+    except ImportError:
+        torch = None
+
+    if torch is not None:
+        torch.manual_seed(21)
+
+    baseline = _run_scoring(LinearRegressionModel(alpha=0.1))
+
+    boosted = _run_scoring(
+        GradientBoostingModel(
+            n_estimators=120,
+            learning_rate=0.08,
+            max_depth=3,
+            random_state=21,
+        )
+    )
+    lstm = _run_scoring(
+        LSTMModel(
+            input_size=8,
+            hidden_size=64,
+            num_layers=2,
+            epochs=5,
+            seq_len=10,
+        )
+    )
+
+    baseline_score = baseline["pipeline"]["best_composite_score"]
+    assert boosted["pipeline"]["best_composite_score"] >= baseline_score + 0.2
+    assert lstm["pipeline"]["best_composite_score"] >= baseline_score - 0.05
