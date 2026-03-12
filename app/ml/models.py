@@ -229,7 +229,6 @@ class LSTMModel(BaseModel):
         self.epochs = epochs
         self.seq_len = seq_len
         self.auto_adjust_input_size = auto_adjust_input_size
-        self._has_adjusted_input_size = False
         self._net: Any = None
         self._train_losses: List[float] = []
 
@@ -264,8 +263,9 @@ class LSTMModel(BaseModel):
         if X.ndim not in (2, 3):
             raise ValueError(
                 "[LSTM] Expected 2D (samples, features) or 3D "
-                f"(samples, sequence_length, features) input; got {X.ndim}D "
-                f"array with shape {X.shape}. Please reshape your input data."
+                "(samples, sequence_length, features) input; 2D inputs are "
+                f"treated as single-step sequences. Got {X.ndim}D array with "
+                f"shape {X.shape}. Please reshape your input data."
             )
         if X.ndim == 3 and X.shape[1] != self.seq_len:
             raise ValueError(
@@ -278,7 +278,8 @@ class LSTMModel(BaseModel):
             if not self.auto_adjust_input_size:
                 raise ValueError(
                     "[LSTM] input_size mismatch: "
-                    f"expected {self.input_size}, got {feature_dim}."
+                    f"expected {self.input_size}, got {feature_dim}. "
+                    "Set auto_adjust_input_size=True to adjust automatically."
                 )
             if self._net is not None:
                 logger.warning(
@@ -295,7 +296,6 @@ class LSTMModel(BaseModel):
                 feature_dim,
             )
             self.input_size = feature_dim
-            self._has_adjusted_input_size = True
 
         net = self._build_net()
         if net is None:
