@@ -193,10 +193,10 @@ class RealtimeInferenceRunner:
                 pred_arr = self.model.predict(feat)
                 pred_val = float(pred_arr[0])
             except Exception:
-                logger.warning(
-                    "[RealtimeInference] Inference failed at bar %d; skipping.", i
+                logger.exception(
+                    "[RealtimeInference] Inference failed at bar %d; re-raising.", i
                 )
-                continue
+                raise
 
             action = 1 if pred_val > 0.01 else (-1 if pred_val < -0.01 else 0)
             confidence = min(1.0, abs(pred_val))

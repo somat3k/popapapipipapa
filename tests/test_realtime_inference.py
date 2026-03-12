@@ -15,7 +15,7 @@ from app.evaluation.realtime_inference import (
     RealtimeInferenceRunner,
 )
 from app.evaluation.test_set_scoring import run_test_set_scoring
-from app.ml.models import LinearRegressionModel, RandomForestModel
+from app.ml.models import LinearRegressionModel
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +286,34 @@ def test_trading_agent_sell_signal_from_inference():
     signals = [s for s in trading.get_signals() if s.get("source") == "ml.inference"]
     assert len(signals) == 1
     assert signals[0]["direction"] == -1
+
+
+def test_trading_agent_ignores_non_dict_payload():
+    bus = MessageBus()
+    trading = TradingAgent(message_bus=bus)
+
+    # Publish a non-dict message on the inference topic
+    bus.publish(INFERENCE_TOPIC, "not-a-dict")
+    bus.publish(INFERENCE_TOPIC, 42)
+
+    # Neither should be stored
+    assert trading.get_inference_payloads() == []
+    assert trading.get_signals() == []
+
+
+def test_trading_agent_stop_unsubscribes():
+    bus = MessageBus()
+    trading = TradingAgent(message_bus=bus)
+
+    # After stopping, new payloads on the topic should NOT be received
+    trading.stop()
+
+    bus.publish(INFERENCE_TOPIC, {
+        "bar_index": 0, "symbol": "ETH", "timestamp": 0.0,
+        "close": 2000.0, "prediction": 0.9, "action": 1, "confidence": 0.9,
+    })
+
+    assert trading.get_inference_payloads() == []
 
 
 # ---------------------------------------------------------------------------

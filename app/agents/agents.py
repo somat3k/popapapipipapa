@@ -96,25 +96,37 @@ class TradingAgent(BaseAgent):
     def get_signals(self) -> List[Dict[str, Any]]:
         return list(self._signals)
 
+    def stop(self) -> None:
+        """Stop the agent and unsubscribe from the inference topic."""
+        try:
+            self.bus.unsubscribe(INFERENCE_TOPIC, self._on_inference_payload)
+        except Exception:
+            logger.exception("[TradingAgent] Failed to unsubscribe from inference topic.")
+        super().stop()
+
     def _on_inference_payload(self, payload: Dict[str, Any]) -> None:
         """Handle an incoming ML inference payload from the message bus.
 
         Stores the payload and auto-generates a trading signal when the
         predicted action is non-zero (buy or sell).
         """
+        if not isinstance(payload, dict):
+            logger.warning(
+                "[TradingAgent] Ignoring non-dict inference payload: %r", payload
+            )
+            return
         self._inference_payloads.append(payload)
-        if isinstance(payload, dict):
-            action = payload.get("action", 0)
-            if action != 0:
-                signal = {
-                    "symbol": payload.get("symbol", ""),
-                    "direction": action,
-                    "confidence": payload.get("confidence", 0.0),
-                    "source": "ml.inference",
-                    "ts": payload.get("timestamp", time.time()),
-                }
-                self._signals.append(signal)
-                self.bus.publish("trading.signal", signal)
+        action = payload.get("action", 0)
+        if action != 0:
+            signal = {
+                "symbol": payload.get("symbol", ""),
+                "direction": action,
+                "confidence": payload.get("confidence", 0.0),
+                "source": "ml.inference",
+                "ts": payload.get("timestamp", time.time()),
+            }
+            self._signals.append(signal)
+            self.bus.publish("trading.signal", signal)
 
     def get_inference_payloads(self) -> List[Dict[str, Any]]:
         """Return all inference payloads received from the ML inference stream."""

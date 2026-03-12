@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Protocol
 
+from app.agents.base_agent import MessageBus
 from app.evaluation.data_loader import OHLCVLoader
 from app.evaluation.realtime_inference import RealtimeInferenceRunner
 from app.evaluation.rl_pipeline import MIN_TRAINING_BARS, IterationResult, RLPipeline
@@ -193,7 +194,10 @@ def _run_realtime_inference_check(
         return {"skipped": True, "reason": "model not trained or insufficient bars"}
     stream_bars = bars[-min(50, len(bars)):]
     try:
-        runner = RealtimeInferenceRunner(model=model, bars=stream_bars, symbol=symbol)
+        isolated_bus = MessageBus()
+        runner = RealtimeInferenceRunner(
+            model=model, bars=stream_bars, symbol=symbol, message_bus=isolated_bus
+        )
         summary = runner.run()
         return summary.to_dict()
     except Exception as exc:
