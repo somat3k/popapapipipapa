@@ -14,7 +14,7 @@ BOOSTING_MIN_IMPROVEMENT = 0.2
 LSTM_MAX_REGRESSION = 0.05
 
 
-def _import_and_seed_torch():
+def _seed_torch():
     torch = pytest.importorskip("torch", reason="Torch is required for LSTM scoring.")
     torch.manual_seed(21)
 
@@ -145,7 +145,7 @@ def test_gradient_boosting_meets_performance_thresholds(tmp_path):
 
 
 def test_lstm_meets_performance_thresholds(tmp_path):
-    _import_and_seed_torch()
+    _seed_torch()
     store = TestSetScoreStore(tmp_path / "scores.db")
     baseline = _run_scoring(LinearRegressionModel(alpha=0.1), store=store)
     lstm = _run_scoring(

@@ -264,7 +264,8 @@ class LSTMModel(BaseModel):
         if X.ndim not in (2, 3):
             raise ValueError(
                 "[LSTM] Expected 2D (samples, features) or 3D "
-                f"(samples, sequence_length, features) input, got {X.shape}."
+                f"(samples, sequence_length, features) input; got {X.ndim}D "
+                f"array with shape {X.shape}."
             )
         feature_dim = X.shape[-1]
         if feature_dim != self.input_size:
@@ -275,8 +276,8 @@ class LSTMModel(BaseModel):
                 )
             if self._trained:
                 logger.warning(
-                    "[LSTM] input_size changing from %d (current) to %d (new); "
-                    "original initialization was %d.",
+                    "[LSTM] input_size change on trained model: %d (current) -> "
+                    "%d (new); initialized with %d.",
                     self.input_size,
                     feature_dim,
                     self.initial_input_size,
