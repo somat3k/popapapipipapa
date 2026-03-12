@@ -264,7 +264,9 @@ def test_equity_health_ensemble_handles_non_finite_scores(simple_dataset):
         health_factors=[np.array([2.0, 2.0]), np.array([2.0, 2.0])],
     )
     assert weights.shape == (2,)
-    assert weights[0] == pytest.approx(weights[1])
+    # Non-finite scores are zeroed, so weights fall back to equal weighting.
+    assert weights[0] == pytest.approx(0.5)
+    assert weights[1] == pytest.approx(0.5)
 
 
 def test_equity_health_ensemble_handles_mismatched_lengths(simple_dataset):

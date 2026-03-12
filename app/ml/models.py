@@ -412,6 +412,8 @@ class EquityHealthEnsembleModel(BaseModel):
     def _normalize_weights(raw: List[float]) -> np.ndarray:
         """Normalise weights with equal-weight fallback on tiny or non-finite totals."""
         values = np.array(raw, dtype=float)
+        if not np.all(np.isfinite(values)):
+            logger.warning("[EquityHealthEnsemble] Non-finite weight scores detected.")
         values = np.where(np.isfinite(values), values, 0.0)
         total = float(np.sum(values))
         if not np.isfinite(total) or total <= _WEIGHT_EPSILON:
