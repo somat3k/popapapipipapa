@@ -292,7 +292,7 @@ Each epic contains at minimum 18 granular tasks.
 2. Implement `LinearRegressionModel` with regularisation (Ridge/Lasso)
 3. Implement `RandomForestModel` with feature importance output
 4. Implement `GradientBoostingModel` (XGBoost / LightGBM wrapper)
-5. Implement `LSTMModel` using PyTorch for sequential data
+5. Implement `NeuralNetworkModel` using scikit-learn for sequence-friendly data
 6. Implement `TransformerModel` (lightweight time-series transformer)
 7. Implement `EnsembleModel` averaging predictions from multiple base models
 8. Add `ModelRegistry` for versioned model storage and retrieval
@@ -343,7 +343,7 @@ Each epic contains at minimum 18 granular tasks.
 **Goal**: End-to-end supervised training with monitoring and reproducibility.
 
 1. Implement `Trainer` class orchestrating data loading → training → evaluation
-2. Add reproducibility: seed everything (random, numpy, torch)
+2. Add reproducibility: seed everything (random, numpy, sklearn)
 3. Implement gradient accumulation for large effective batch sizes
 4. Build checkpointing: save best model by validation metric
 5. Implement mixed-precision training (FP16 / BF16 where supported)

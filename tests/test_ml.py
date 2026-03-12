@@ -4,10 +4,12 @@ import numpy as np
 import pytest
 
 from app.ml.models import (
+    EquityHealthEnsembleModel,
     EnsembleModel,
     GradientBoostingModel,
     LinearRegressionModel,
     ModelRegistry,
+    NeuralNetworkModel,
     RandomForestModel,
     _directional_accuracy,
     _mae,
@@ -137,6 +139,7 @@ def test_random_forest_feature_importances(simple_dataset):
 # ---------------------------------------------------------------------------
 
 def test_gradient_boosting_fits(simple_dataset):
+    pytest.importorskip("xgboost")
     X, y = simple_dataset
     model = GradientBoostingModel(n_estimators=20)
     model.fit(X, y)
@@ -144,8 +147,28 @@ def test_gradient_boosting_fits(simple_dataset):
 
 
 def test_gradient_boosting_predict(simple_dataset):
+    pytest.importorskip("xgboost")
     X, y = simple_dataset
     model = GradientBoostingModel(n_estimators=10)
+    model.fit(X, y)
+    preds = model.predict(X)
+    assert len(preds) == len(X)
+
+
+# ---------------------------------------------------------------------------
+# NeuralNetworkModel tests
+# ---------------------------------------------------------------------------
+
+def test_neural_network_fits(simple_dataset):
+    X, y = simple_dataset
+    model = NeuralNetworkModel(hidden_layer_sizes=(16, 8), max_iter=100)
+    model.fit(X, y)
+    assert model.is_trained
+
+
+def test_neural_network_predict(simple_dataset):
+    X, y = simple_dataset
+    model = NeuralNetworkModel(hidden_layer_sizes=(8,), max_iter=50)
     model.fit(X, y)
     preds = model.predict(X)
     assert len(preds) == len(X)
@@ -169,6 +192,29 @@ def test_ensemble_empty_raises():
     ens = EnsembleModel([])
     with pytest.raises(RuntimeError, match="No models"):
         ens.predict(np.ones((3, 5)))
+
+
+# ---------------------------------------------------------------------------
+# EquityHealthEnsembleModel tests
+# ---------------------------------------------------------------------------
+
+def test_equity_health_ensemble_weights(simple_dataset):
+    X, y = simple_dataset
+    m1 = LinearRegressionModel()
+    m2 = RandomForestModel(n_estimators=5)
+    ens = EquityHealthEnsembleModel([m1, m2])
+    ens.fit(X, y)
+    weights = ens.update_weights_from_equity(
+        equity_curves=[
+            np.array([100.0, 101.0, 103.0, 104.0]),
+            np.array([100.0, 100.5, 100.0, 99.0]),
+        ],
+        health_factors=[np.array([2.1, 2.0, 1.9]), np.array([1.2, 1.1, 1.0])],
+    )
+    assert weights.shape == (2,)
+    assert weights[0] > weights[1]
+    preds = ens.predict(X)
+    assert len(preds) == len(X)
 
 
 # ---------------------------------------------------------------------------
