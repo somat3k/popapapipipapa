@@ -7,16 +7,14 @@ from app.evaluation.metrics import AgentEvaluationMetrics
 from app.evaluation.rl_pipeline import IterationResult
 from app.evaluation.test_set_scoring import run_test_set_scoring
 from app.evaluation.test_set_storage import TestSetScoreStore
-from app.ml.models import GradientBoostingModel, LinearRegressionModel, LSTMModel
+from app.ml.models import GradientBoostingModel, LinearRegressionModel, NeuralNetworkModel
 
 # Expected deltas based on deterministic synthetic runs with tuned hyperparams.
 BOOSTING_MIN_IMPROVEMENT = 0.2
-LSTM_MAX_REGRESSION = 0.05
+NN_REGRESSION_THRESHOLD = 0.05
 
 
 def _set_deterministic_seeds():
-    torch = pytest.importorskip("torch", reason="Torch is required for LSTM scoring.")
-    torch.manual_seed(21)
     np.random.seed(21)
 
 
@@ -124,6 +122,7 @@ def _assert_run_persisted(store, result, expected_bars, expected_iterations):
 
 
 def test_gradient_boosting_meets_performance_thresholds(tmp_path):
+    pytest.importorskip("xgboost")
     store = TestSetScoreStore(tmp_path / "scores.db")
     baseline = _run_test_set_scoring(LinearRegressionModel(alpha=0.1), store=store)
 
@@ -145,23 +144,21 @@ def test_gradient_boosting_meets_performance_thresholds(tmp_path):
     _assert_run_persisted(store, boosted, expected_bars=160, expected_iterations=2)
 
 
-def test_lstm_meets_performance_thresholds(tmp_path):
+def test_neural_network_meets_performance_thresholds(tmp_path):
     _set_deterministic_seeds()
     store = TestSetScoreStore(tmp_path / "scores.db")
     baseline = _run_test_set_scoring(LinearRegressionModel(alpha=0.1), store=store)
-    lstm = _run_test_set_scoring(
-        LSTMModel(
-            input_size=8,
-            hidden_size=64,
-            num_layers=2,
-            epochs=5,
-            seq_len=10,
+    nn_model = _run_test_set_scoring(
+        NeuralNetworkModel(
+            hidden_layer_sizes=(64, 32),
+            max_iter=120,
+            random_state=21,
         ),
         store=store,
     )
     baseline_score = baseline["pipeline"]["best_composite_score"]
     assert (
-        lstm["pipeline"]["best_composite_score"]
-        >= baseline_score - LSTM_MAX_REGRESSION
+        nn_model["pipeline"]["best_composite_score"]
+        >= baseline_score - NN_REGRESSION_THRESHOLD
     )
-    _assert_run_persisted(store, lstm, expected_bars=160, expected_iterations=2)
+    _assert_run_persisted(store, nn_model, expected_bars=160, expected_iterations=2)
