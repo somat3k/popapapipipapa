@@ -170,6 +170,7 @@ def test_neural_network_predict(simple_dataset):
     X, y = simple_dataset
     model = NeuralNetworkModel(hidden_layer_sizes=(8,), max_iter=50)
     model.fit(X, y)
+    assert model.is_trained
     preds = model.predict(X)
     assert len(preds) == len(X)
 

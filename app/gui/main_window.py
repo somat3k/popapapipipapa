@@ -762,6 +762,7 @@ class MLPanel(DarkFrame):
             "RandomForest": RandomForestModel,
             "GradientBoosting": GradientBoostingModel,
             "NeuralNetwork": NeuralNetworkModel,
+            # Default ensemble members for the equity/health-weighted option.
             "EquityHealthEnsemble": lambda: EquityHealthEnsembleModel(
                 [
                     LinearRegressionModel(),

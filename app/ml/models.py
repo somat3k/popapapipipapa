@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 logger = logging.getLogger(__name__)
-WEIGHT_EPSILON = 1e-12
+_WEIGHT_EPSILON = 1e-12
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +300,9 @@ class EnsembleModel(BaseModel):
 class EquityHealthEnsembleModel(BaseModel):
     """Ensemble that weights models by equity growth and health score."""
 
+    DEFAULT_RETURNS = np.zeros(1)
+    DEFAULT_HEALTH_FACTORS = np.full(1, 2.0)
+
     def __init__(self, models: Optional[List[BaseModel]] = None) -> None:
         super().__init__("EquityHealthEnsemble")
         self._models: List[BaseModel] = models or []
@@ -336,9 +339,9 @@ class EquityHealthEnsembleModel(BaseModel):
                 resolved_returns = resolved_returns[:aligned_len]
                 resolved_hf = resolved_hf[:aligned_len]
             if resolved_returns.size == 0:
-                resolved_returns = np.zeros(1)
+                resolved_returns = self.DEFAULT_RETURNS.copy()
             if resolved_hf.size == 0:
-                resolved_hf = np.full(1, 2.0)
+                resolved_hf = self.DEFAULT_HEALTH_FACTORS.copy()
             metrics = AgentEvaluationMetrics(
                 returns=resolved_returns,
                 health_factors=resolved_hf,
@@ -364,6 +367,7 @@ class EquityHealthEnsembleModel(BaseModel):
                 returns.append(np.array([]))
             else:
                 denom = eq[:-1]
+                # Avoid division-by-zero by returning 0.0 when the denominator is 0.
                 returns.append(
                     np.divide(
                         np.diff(eq),
@@ -389,10 +393,8 @@ class EquityHealthEnsembleModel(BaseModel):
     @staticmethod
     def _normalise_weights(raw: List[float]) -> np.ndarray:
         values = np.array(raw, dtype=float)
-        if np.all(values <= WEIGHT_EPSILON):
-            return np.full(len(values), 1 / len(values))
         total = float(np.sum(values))
-        if total <= WEIGHT_EPSILON:
+        if total <= _WEIGHT_EPSILON:
             return np.full(len(values), 1 / len(values))
         return values / total
 
