@@ -232,6 +232,7 @@ class NeuralNetworkModel(BaseModel):
         self._model: Any = None
 
     def _reshape_features(self, X: np.ndarray) -> np.ndarray:
+        """Return a 2D feature matrix, flattening 3D sequences if needed."""
         if X.ndim == 2:
             return X
         if X.ndim == 3:
@@ -323,6 +324,12 @@ class EquityHealthEnsembleModel(BaseModel):
         health_factors: List[np.ndarray],
         periods_per_year: float = 252.0,
     ) -> np.ndarray:
+        """Update model weights using equity growth and health factor scores.
+
+        Weights are proportional to max(CAGR, 0) × health_factor_score,
+        using ``periods_per_year`` for the CAGR calculation. Returns a
+        normalised weight vector aligned to the current model list.
+        """
         if len(returns) != len(self._models) or len(health_factors) != len(self._models):
             raise ValueError("Returns and health_factors must match number of models.")
         if not self._models:
@@ -369,6 +376,7 @@ class EquityHealthEnsembleModel(BaseModel):
         health_factors: List[np.ndarray],
         periods_per_year: float = 252.0,
     ) -> np.ndarray:
+        """Convert equity curves to returns and delegate to ``update_weights``."""
         returns = []
         for equity in equity_curves:
             eq = np.asarray(equity, dtype=float)
@@ -395,12 +403,14 @@ class EquityHealthEnsembleModel(BaseModel):
         return np.average(preds, axis=0, weights=weights)
 
     def _resolve_weights(self) -> np.ndarray:
+        """Return user-defined weights or equal weights if unset."""
         if self._weights is None or len(self._weights) != len(self._models):
             return np.full(len(self._models), 1 / len(self._models))
         return self._weights
 
     @staticmethod
     def _normalize_weights(raw: List[float]) -> np.ndarray:
+        """Normalise weights with equal-weight fallback on tiny totals."""
         values = np.array(raw, dtype=float)
         total = float(np.sum(values))
         if total <= _WEIGHT_EPSILON:
