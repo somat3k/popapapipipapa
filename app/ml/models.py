@@ -218,14 +218,17 @@ class LSTMModel(BaseModel):
         learning_rate: float = 1e-3,
         epochs: int = 50,
         seq_len: int = 20,
+        auto_adjust_input_size: bool = True,
     ) -> None:
         super().__init__("LSTM")
         self.input_size = input_size
+        self.configured_input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.learning_rate = learning_rate
         self.epochs = epochs
         self.seq_len = seq_len
+        self.auto_adjust_input_size = auto_adjust_input_size
         self._net: Any = None
         self._train_losses: List[float] = []
 
@@ -256,6 +259,43 @@ class LSTMModel(BaseModel):
             logger.warning("[LSTM] PyTorch not available. Falling back to identity.")
             self._trained = True
             return self
+
+        if X.ndim not in (2, 3):
+            raise ValueError(
+                "[LSTM] Expected 2D (samples, features) or 3D "
+                "(samples, sequence_length, features) input; 2D inputs are "
+                f"treated as single-step sequences. Got {X.ndim}D array with "
+                f"shape {X.shape}. Please reshape your input data."
+            )
+        if X.ndim == 3 and X.shape[1] != self.seq_len:
+            raise ValueError(
+                "[LSTM] Expected sequence_length "
+                f"{self.seq_len}, got {X.shape[1]}. "
+                "Please reshape your input data or update seq_len."
+            )
+        feature_dim = X.shape[-1]
+        if feature_dim != self.input_size:
+            if not self.auto_adjust_input_size:
+                raise ValueError(
+                    "[LSTM] input_size mismatch: "
+                    f"expected {self.input_size}, got {feature_dim}. "
+                    "Set auto_adjust_input_size=True to adjust automatically."
+                )
+            if self._net is not None:
+                logger.warning(
+                    "[LSTM] Adjusting input_size on already-trained model from %d "
+                    "to %d (originally configured as %d). This will reinitialize "
+                    "the network.",
+                    self.input_size,
+                    feature_dim,
+                    self.configured_input_size,
+                )
+            logger.info(
+                "[LSTM] Adjusting input_size from %d to %d to match features.",
+                self.input_size,
+                feature_dim,
+            )
+            self.input_size = feature_dim
 
         net = self._build_net()
         if net is None:

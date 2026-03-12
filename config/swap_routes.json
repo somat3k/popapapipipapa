@@ -1,0 +1,91 @@
+{
+  "_comment": "Swap route definitions. 'slippage_pct' is the maximum acceptable slippage percentage.",
+  "collateral_swap_routes": [
+    {
+      "from_token": "WETH",
+      "to_token": "USDC_E",
+      "slippage_pct": 0.5,
+      "description": "WETH → USDC.e via DEX aggregator"
+    },
+    {
+      "from_token": "WETH",
+      "to_token": "USDC",
+      "slippage_pct": 0.5,
+      "description": "WETH → native USDC via DEX aggregator"
+    },
+    {
+      "from_token": "WBTC",
+      "to_token": "USDC_E",
+      "slippage_pct": 0.5,
+      "description": "WBTC → USDC.e via DEX aggregator"
+    },
+    {
+      "from_token": "WBTC",
+      "to_token": "USDC",
+      "slippage_pct": 0.5,
+      "description": "WBTC → native USDC via DEX aggregator"
+    },
+    {
+      "from_token": "WPOL",
+      "to_token": "USDC_E",
+      "slippage_pct": 0.5,
+      "description": "WPOL → USDC.e via DEX aggregator"
+    },
+    {
+      "from_token": "WPOL",
+      "to_token": "USDC",
+      "slippage_pct": 0.5,
+      "description": "WPOL → native USDC via DEX aggregator"
+    },
+    {
+      "from_token": "stMATIC",
+      "to_token": "USDC_E",
+      "slippage_pct": 0.5,
+      "description": "stMATIC → USDC.e via DEX aggregator"
+    },
+    {
+      "from_token": "MaticX",
+      "to_token": "USDC_E",
+      "slippage_pct": 0.5,
+      "description": "MaticX → USDC.e via DEX aggregator"
+    }
+  ],
+  "borrow_token_swap_routes": [
+    {
+      "from_token": "USDC_E",
+      "to_token": "USDC",
+      "slippage_pct": 0.05,
+      "description": "USDC.e (bridged) → native USDC"
+    },
+    {
+      "from_token": "USDC",
+      "to_token": "USDC_E",
+      "slippage_pct": 0.05,
+      "description": "Native USDC → USDC.e (bridged)"
+    },
+    {
+      "from_token": "USDC_E",
+      "to_token": "DAI",
+      "slippage_pct": 0.1,
+      "description": "USDC.e → DAI via stableswap"
+    },
+    {
+      "from_token": "USDC",
+      "to_token": "DAI",
+      "slippage_pct": 0.1,
+      "description": "Native USDC → DAI via stableswap"
+    },
+    {
+      "from_token": "USDC_E",
+      "to_token": "USDT",
+      "slippage_pct": 0.1,
+      "description": "USDC.e → USDT via stableswap"
+    },
+    {
+      "from_token": "USDC",
+      "to_token": "USDT",
+      "slippage_pct": 0.1,
+      "description": "Native USDC → USDT via stableswap"
+    }
+  ]
+}

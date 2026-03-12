@@ -1,0 +1,18 @@
+{
+  "_comment": "Protocol/contract addresses for Morpho Blue on Polygon POS mainnet (chain ID 137).",
+  "morpho_blue_polygon": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+  "irm_address": "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
+  "oracle_addresses": {
+    "WPOL_USD": "0xAB594600376Ec9fD91F8e885dADF0CE036862dE0",
+    "WETH_USD": "0xF9680D99D6C9589e2a93a78A04A279e509205945",
+    "WBTC_USD": "0xDE31F8bFBD8c84b5360CFACCa3539B938dd78ae6",
+    "USDC_USD": "0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7"
+  },
+  "polygon_chain_id": 137,
+  "polygon_rpc_urls": [
+    "https://polygon-rpc.com",
+    "https://rpc-mainnet.matic.network",
+    "https://rpc-mainnet.maticvigil.com",
+    "https://polygon.llamarpc.com"
+  ]
+}
