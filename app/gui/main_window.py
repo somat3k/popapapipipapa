@@ -776,7 +776,10 @@ class MLPanel(DarkFrame):
             self._log_msg(f"Model '{model_type}' not yet wired in this demo.")
             return
 
-        model = factory() if callable(factory) else factory
+        if not callable(factory):
+            self._log_msg(f"Model '{model_type}' is not callable.")
+            return
+        model = factory()
         self._log_msg(f"Training {model_type} for {epochs} epochs…")
 
         def on_progress(epoch: int, total: int, metrics: Dict[str, float]) -> None:

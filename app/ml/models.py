@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 logger = logging.getLogger(__name__)
+EPSILON = 1e-12
 
 
 # ---------------------------------------------------------------------------
@@ -358,7 +359,7 @@ class EquityHealthEnsembleModel(BaseModel):
             if len(eq) < 2:
                 returns.append(np.array([]))
             else:
-                returns.append(np.diff(eq) / (eq[:-1] + 1e-12))
+                returns.append(np.diff(eq) / (eq[:-1] + EPSILON))
         return self.update_weights(returns, health_factors, periods_per_year)
 
     def predict(self, X: np.ndarray) -> np.ndarray:

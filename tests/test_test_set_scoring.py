@@ -11,7 +11,7 @@ from app.ml.models import GradientBoostingModel, LinearRegressionModel, NeuralNe
 
 # Expected deltas based on deterministic synthetic runs with tuned hyperparams.
 BOOSTING_MIN_IMPROVEMENT = 0.2
-NN_MAX_REGRESSION = 0.05
+NN_REGRESSION_THRESHOLD = 0.05
 
 
 def _set_deterministic_seeds():
@@ -159,6 +159,6 @@ def test_neural_network_meets_performance_thresholds(tmp_path):
     baseline_score = baseline["pipeline"]["best_composite_score"]
     assert (
         nn_model["pipeline"]["best_composite_score"]
-        >= baseline_score - NN_MAX_REGRESSION
+        >= baseline_score - NN_REGRESSION_THRESHOLD
     )
     _assert_run_persisted(store, nn_model, expected_bars=160, expected_iterations=2)
