@@ -334,8 +334,17 @@ class EquityHealthEnsembleModel(BaseModel):
         for model_returns, model_hf in zip(returns, health_factors):
             resolved_returns = np.asarray(model_returns, dtype=float)
             resolved_hf = np.asarray(model_hf, dtype=float)
-            aligned_len = min(len(resolved_returns), len(resolved_hf))
+            returns_len = len(resolved_returns)
+            hf_len = len(resolved_hf)
+            aligned_len = min(returns_len, hf_len)
             if aligned_len > 0:
+                if returns_len != hf_len:
+                    logger.warning(
+                        "[EquityHealthEnsemble] Truncating inputs from %d/%d to %d.",
+                        returns_len,
+                        hf_len,
+                        aligned_len,
+                    )
                 resolved_returns = resolved_returns[:aligned_len]
                 resolved_hf = resolved_hf[:aligned_len]
             if resolved_returns.size == 0:
@@ -350,7 +359,7 @@ class EquityHealthEnsembleModel(BaseModel):
             health_score = max(0.0, metrics.health_factor_score())
             scores.append(growth * health_score)
 
-        weights = self._normalise_weights(scores)
+        weights = self._normalize_weights(scores)
         self._weights = weights
         return weights
 
@@ -367,7 +376,7 @@ class EquityHealthEnsembleModel(BaseModel):
                 returns.append(np.array([]))
             else:
                 denom = eq[:-1]
-                # Avoid division-by-zero by returning 0.0 when the denominator is 0.
+                # Avoid division by zero by returning 0.0 when the denominator is 0.
                 returns.append(
                     np.divide(
                         np.diff(eq),
@@ -391,7 +400,7 @@ class EquityHealthEnsembleModel(BaseModel):
         return self._weights
 
     @staticmethod
-    def _normalise_weights(raw: List[float]) -> np.ndarray:
+    def _normalize_weights(raw: List[float]) -> np.ndarray:
         values = np.array(raw, dtype=float)
         total = float(np.sum(values))
         if total <= _WEIGHT_EPSILON:

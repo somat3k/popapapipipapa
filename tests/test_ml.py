@@ -175,6 +175,14 @@ def test_neural_network_predict(simple_dataset):
     assert len(preds) == len(X)
 
 
+def test_neural_network_invalid_dimensions():
+    model = NeuralNetworkModel(hidden_layer_sizes=(8,), max_iter=10)
+    with pytest.raises(ValueError, match="Expected 2D"):
+        model.fit(np.ones((5,)), np.ones(5))
+    with pytest.raises(ValueError, match="Expected 2D"):
+        model.fit(np.ones((2, 2, 2, 2)), np.ones(2))
+
+
 # ---------------------------------------------------------------------------
 # EnsembleModel tests
 # ---------------------------------------------------------------------------
@@ -230,6 +238,19 @@ def test_equity_health_ensemble_defaults_for_zero_scores(simple_dataset):
     )
     assert weights.shape == (2,)
     assert weights[0] == pytest.approx(weights[1])
+
+
+def test_equity_health_ensemble_asymmetric_empty_inputs(simple_dataset):
+    X, y = simple_dataset
+    m1 = LinearRegressionModel()
+    m2 = RandomForestModel(n_estimators=5)
+    ens = EquityHealthEnsembleModel([m1, m2])
+    ens.fit(X, y)
+    weights = ens.update_weights(
+        returns=[np.array([]), np.array([0.01, 0.02])],
+        health_factors=[np.array([2.0, 1.8]), np.array([])],
+    )
+    assert weights.shape == (2,)
 
 
 def test_equity_health_ensemble_handles_mismatched_lengths(simple_dataset):
