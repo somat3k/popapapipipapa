@@ -231,6 +231,25 @@ def test_equity_health_ensemble_defaults_for_zero_scores(simple_dataset):
     assert weights[0] == pytest.approx(weights[1])
 
 
+def test_equity_health_ensemble_handles_mismatched_lengths(simple_dataset):
+    X, y = simple_dataset
+    m1 = LinearRegressionModel()
+    m2 = RandomForestModel(n_estimators=5)
+    ens = EquityHealthEnsembleModel([m1, m2])
+    ens.fit(X, y)
+    weights = ens.update_weights_from_equity(
+        equity_curves=[
+            np.array([100.0, 101.0, 100.5, 102.0]),
+            np.array([100.0, 99.5, 99.0]),
+        ],
+        health_factors=[
+            np.array([2.0, 1.9]),
+            np.array([1.4, 1.3, 1.2, 1.1]),
+        ],
+    )
+    assert weights.shape == (2,)
+
+
 # ---------------------------------------------------------------------------
 # ModelRegistry tests
 # ---------------------------------------------------------------------------

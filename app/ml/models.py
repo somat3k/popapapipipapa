@@ -331,6 +331,10 @@ class EquityHealthEnsembleModel(BaseModel):
         for model_returns, model_hf in zip(returns, health_factors):
             resolved_returns = np.asarray(model_returns, dtype=float)
             resolved_hf = np.asarray(model_hf, dtype=float)
+            aligned_len = min(len(resolved_returns), len(resolved_hf))
+            if aligned_len > 0:
+                resolved_returns = resolved_returns[:aligned_len]
+                resolved_hf = resolved_hf[:aligned_len]
             if resolved_returns.size == 0:
                 resolved_returns = np.zeros(1)
             if resolved_hf.size == 0:
@@ -387,7 +391,10 @@ class EquityHealthEnsembleModel(BaseModel):
         values = np.array(raw, dtype=float)
         if np.all(values <= WEIGHT_EPSILON):
             return np.full(len(values), 1 / len(values))
-        return values / np.sum(values)
+        total = float(np.sum(values))
+        if total <= WEIGHT_EPSILON:
+            return np.full(len(values), 1 / len(values))
+        return values / total
 
 
 # ---------------------------------------------------------------------------
