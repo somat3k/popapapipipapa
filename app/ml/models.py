@@ -222,14 +222,14 @@ class LSTMModel(BaseModel):
     ) -> None:
         super().__init__("LSTM")
         self.input_size = input_size
-        self.initial_input_size = input_size
+        self.configured_input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.learning_rate = learning_rate
         self.epochs = epochs
         self.seq_len = seq_len
         self.auto_adjust_input_size = auto_adjust_input_size
-        self._input_size_adjusted = False
+        self._has_adjusted_input_size = False
         self._net: Any = None
         self._train_losses: List[float] = []
 
@@ -265,7 +265,7 @@ class LSTMModel(BaseModel):
             raise ValueError(
                 "[LSTM] Expected 2D (samples, features) or 3D "
                 f"(samples, sequence_length, features) input; got {X.ndim}D "
-                f"array with shape {X.shape}."
+                f"array with shape {X.shape}. Please reshape your input data."
             )
         feature_dim = X.shape[-1]
         if feature_dim != self.input_size:
@@ -276,11 +276,12 @@ class LSTMModel(BaseModel):
                 )
             if self._trained:
                 logger.warning(
-                    "[LSTM] input_size change on trained model: %d (current) -> "
-                    "%d (new); initialized with %d.",
+                    "[LSTM] Adjusting input_size on already-trained model from %d "
+                    "to %d (originally configured as %d). This will reinitialize "
+                    "the network.",
                     self.input_size,
                     feature_dim,
-                    self.initial_input_size,
+                    self.configured_input_size,
                 )
             logger.info(
                 "[LSTM] Adjusting input_size from %d to %d to match features.",
@@ -288,7 +289,7 @@ class LSTMModel(BaseModel):
                 feature_dim,
             )
             self.input_size = feature_dim
-            self._input_size_adjusted = True
+            self._has_adjusted_input_size = True
 
         net = self._build_net()
         if net is None:

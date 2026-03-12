@@ -14,7 +14,7 @@ BOOSTING_MIN_IMPROVEMENT = 0.2
 LSTM_MAX_REGRESSION = 0.05
 
 
-def _seed_torch():
+def _setup_torch_with_seed():
     torch = pytest.importorskip("torch", reason="Torch is required for LSTM scoring.")
     torch.manual_seed(21)
 
@@ -98,7 +98,7 @@ def test_run_test_set_scoring_stores_results(tmp_path):
     assert scores[0]["test_set_bars"] > 0
 
 
-def _run_scoring(model, store=None):
+def _run_test_set_scoring(model, store=None):
     return run_test_set_scoring(
         model=model,
         symbol="ETH",
@@ -124,9 +124,9 @@ def _assert_run_persisted(store, result, expected_bars, expected_iterations):
 
 def test_gradient_boosting_meets_performance_thresholds(tmp_path):
     store = TestSetScoreStore(tmp_path / "scores.db")
-    baseline = _run_scoring(LinearRegressionModel(alpha=0.1), store=store)
+    baseline = _run_test_set_scoring(LinearRegressionModel(alpha=0.1), store=store)
 
-    boosted = _run_scoring(
+    boosted = _run_test_set_scoring(
         GradientBoostingModel(
             n_estimators=120,
             learning_rate=0.08,
@@ -145,10 +145,10 @@ def test_gradient_boosting_meets_performance_thresholds(tmp_path):
 
 
 def test_lstm_meets_performance_thresholds(tmp_path):
-    _seed_torch()
+    _setup_torch_with_seed()
     store = TestSetScoreStore(tmp_path / "scores.db")
-    baseline = _run_scoring(LinearRegressionModel(alpha=0.1), store=store)
-    lstm = _run_scoring(
+    baseline = _run_test_set_scoring(LinearRegressionModel(alpha=0.1), store=store)
+    lstm = _run_test_set_scoring(
         LSTMModel(
             input_size=8,
             hidden_size=64,
