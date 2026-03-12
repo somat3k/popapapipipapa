@@ -263,31 +263,31 @@ class LSTMModel(BaseModel):
 
         if X.ndim not in (2, 3):
             raise ValueError(
-                "[LSTM] Expected 2D or 3D input for training, "
-                f"got shape {X.shape}."
+                "[LSTM] Expected 2D (samples, features) or 3D "
+                f"(samples, sequence_length, features) input, got {X.shape}."
             )
         feature_dim = X.shape[-1]
         if feature_dim != self.input_size:
-            if self.auto_adjust_input_size:
-                if self._trained:
-                    logger.warning(
-                        "[LSTM] input_size changed from %d to %d; original was %d.",
-                        self.input_size,
-                        feature_dim,
-                        self.initial_input_size,
-                    )
-                logger.info(
-                    "[LSTM] Adjusting input_size from %d to %d to match features.",
-                    self.input_size,
-                    feature_dim,
-                )
-                self.input_size = feature_dim
-                self._input_size_adjusted = True
-            else:
+            if not self.auto_adjust_input_size:
                 raise ValueError(
                     "[LSTM] input_size mismatch: "
                     f"expected {self.input_size}, got {feature_dim}."
                 )
+            if self._trained:
+                logger.warning(
+                    "[LSTM] input_size changing from %d (current) to %d (new); "
+                    "original initialization was %d.",
+                    self.input_size,
+                    feature_dim,
+                    self.initial_input_size,
+                )
+            logger.info(
+                "[LSTM] Adjusting input_size from %d to %d to match features.",
+                self.input_size,
+                feature_dim,
+            )
+            self.input_size = feature_dim
+            self._input_size_adjusted = True
 
         net = self._build_net()
         if net is None:

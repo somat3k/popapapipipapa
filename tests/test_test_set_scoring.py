@@ -14,7 +14,7 @@ BOOSTING_MIN_IMPROVEMENT = 0.2
 LSTM_MAX_REGRESSION = 0.05
 
 
-def _set_torch_seed():
+def _import_and_seed_torch():
     torch = pytest.importorskip("torch", reason="Torch is required for LSTM scoring.")
     torch.manual_seed(21)
 
@@ -98,7 +98,7 @@ def test_run_test_set_scoring_stores_results(tmp_path):
     assert scores[0]["test_set_bars"] > 0
 
 
-def _run_scoring(model):
+def _run_scoring(model, store=None):
     return run_test_set_scoring(
         model=model,
         symbol="ETH",
@@ -107,11 +107,24 @@ def _run_scoring(model):
         seed=21,
         iterations=2,
         patience=1,
+        store=store,
     )
 
 
-def test_advanced_models_meet_performance_thresholds():
-    baseline = _run_scoring(LinearRegressionModel(alpha=0.1))
+def _assert_run_persisted(store, result, expected_bars, expected_iterations):
+    run_id = result["run_id"]
+    assert run_id is not None
+    run = store.fetch_training_run(run_id)
+    scores = store.fetch_iteration_scores(run_id)
+
+    assert run is not None
+    assert run.total_bars == expected_bars
+    assert len(scores) == expected_iterations
+
+
+def test_gradient_boosting_meets_performance_thresholds(tmp_path):
+    store = TestSetScoreStore(tmp_path / "scores.db")
+    baseline = _run_scoring(LinearRegressionModel(alpha=0.1), store=store)
 
     boosted = _run_scoring(
         GradientBoostingModel(
@@ -119,17 +132,8 @@ def test_advanced_models_meet_performance_thresholds():
             learning_rate=0.08,
             max_depth=3,
             random_state=21,
-        )
-    )
-    _set_torch_seed()
-    lstm = _run_scoring(
-        LSTMModel(
-            input_size=8,
-            hidden_size=64,
-            num_layers=2,
-            epochs=5,
-            seq_len=10,
-        )
+        ),
+        store=store,
     )
 
     baseline_score = baseline["pipeline"]["best_composite_score"]
@@ -137,7 +141,26 @@ def test_advanced_models_meet_performance_thresholds():
         boosted["pipeline"]["best_composite_score"]
         >= baseline_score + BOOSTING_MIN_IMPROVEMENT
     )
+    _assert_run_persisted(store, boosted, expected_bars=160, expected_iterations=2)
+
+
+def test_lstm_meets_performance_thresholds(tmp_path):
+    _import_and_seed_torch()
+    store = TestSetScoreStore(tmp_path / "scores.db")
+    baseline = _run_scoring(LinearRegressionModel(alpha=0.1), store=store)
+    lstm = _run_scoring(
+        LSTMModel(
+            input_size=8,
+            hidden_size=64,
+            num_layers=2,
+            epochs=5,
+            seq_len=10,
+        ),
+        store=store,
+    )
+    baseline_score = baseline["pipeline"]["best_composite_score"]
     assert (
         lstm["pipeline"]["best_composite_score"]
         >= baseline_score - LSTM_MAX_REGRESSION
     )
+    _assert_run_persisted(store, lstm, expected_bars=160, expected_iterations=2)
