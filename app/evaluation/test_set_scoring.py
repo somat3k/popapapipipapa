@@ -36,7 +36,7 @@ def _check_connection(morpho_client: Optional[MorphoClientProtocol]) -> Connecti
         market_checked = ""
         if isinstance(markets, dict):
             if markets:
-                market_checked = next(iter(markets.values()))
+                market_checked = next(iter(markets))
                 if hasattr(morpho_client, "get_position"):
                     morpho_client.get_position(market_checked)
             status = "connected" if markets else "no_markets"
@@ -98,16 +98,19 @@ def run_test_set_scoring(
 ) -> Dict[str, Any]:
     """Run the RL pipeline with test-set scoring and persistence."""
     loader = data_loader or OHLCVLoader()
-    resolved_bars = bars or _load_bars(
-        data_loader=loader,
-        symbol=symbol,
-        data_source=data_source,
-        bars_count=bars_count,
-        days=days,
-        timeframe=timeframe,
-        csv_path=csv_path,
-        seed=seed,
-    )
+    if bars is not None:
+        resolved_bars = bars
+    else:
+        resolved_bars = _load_bars(
+            data_loader=loader,
+            symbol=symbol,
+            data_source=data_source,
+            bars_count=bars_count,
+            days=days,
+            timeframe=timeframe,
+            csv_path=csv_path,
+            seed=seed,
+        )
 
     connection_report = _check_connection(morpho_client)
     run_id: Optional[int] = None

@@ -469,7 +469,7 @@ class IterationResult:
     letter_grade: str
     policy_update_metrics: Optional[Dict[str, float]]
     elapsed_s: float
-    test_set_metrics: Dict[str, float] = field(default_factory=dict)
+    test_set_metrics: Dict[str, Any] = field(default_factory=dict)
     test_set_bars: int = 0
 
 
