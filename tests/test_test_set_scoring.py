@@ -9,6 +9,17 @@ from app.evaluation.test_set_scoring import run_test_set_scoring
 from app.evaluation.test_set_storage import TestSetScoreStore
 from app.ml.models import GradientBoostingModel, LinearRegressionModel, LSTMModel
 
+# Expected deltas based on deterministic synthetic runs with tuned hyperparams.
+BOOSTING_MIN_IMPROVEMENT = 0.2
+LSTM_MAX_REGRESSION = 0.05
+
+
+@pytest.fixture(scope="module")
+def torch_seed():
+    torch = pytest.importorskip("torch", reason="Torch is required for LSTM scoring.")
+    torch.manual_seed(21)
+    return torch
+
 
 class DummyMorphoClient:
     def list_markets(self):
@@ -101,15 +112,7 @@ def _run_scoring(model):
     )
 
 
-def test_advanced_models_outperform_baseline():
-    try:
-        import torch
-    except ImportError:
-        torch = None
-
-    if torch is not None:
-        torch.manual_seed(21)
-
+def test_advanced_models_outperform_baseline(torch_seed):
     baseline = _run_scoring(LinearRegressionModel(alpha=0.1))
 
     boosted = _run_scoring(
@@ -131,5 +134,11 @@ def test_advanced_models_outperform_baseline():
     )
 
     baseline_score = baseline["pipeline"]["best_composite_score"]
-    assert boosted["pipeline"]["best_composite_score"] >= baseline_score + 0.2
-    assert lstm["pipeline"]["best_composite_score"] >= baseline_score - 0.05
+    assert (
+        boosted["pipeline"]["best_composite_score"]
+        >= baseline_score + BOOSTING_MIN_IMPROVEMENT
+    )
+    assert (
+        lstm["pipeline"]["best_composite_score"]
+        >= baseline_score - LSTM_MAX_REGRESSION
+    )
