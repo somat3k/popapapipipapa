@@ -267,6 +267,12 @@ class LSTMModel(BaseModel):
                 f"(samples, sequence_length, features) input; got {X.ndim}D "
                 f"array with shape {X.shape}. Please reshape your input data."
             )
+        if X.ndim == 3 and X.shape[1] != self.seq_len:
+            raise ValueError(
+                "[LSTM] Expected sequence_length "
+                f"{self.seq_len}, got {X.shape[1]}. "
+                "Please reshape your input data or update seq_len."
+            )
         feature_dim = X.shape[-1]
         if feature_dim != self.input_size:
             if not self.auto_adjust_input_size:
@@ -274,7 +280,7 @@ class LSTMModel(BaseModel):
                     "[LSTM] input_size mismatch: "
                     f"expected {self.input_size}, got {feature_dim}."
                 )
-            if self._trained:
+            if self._net is not None:
                 logger.warning(
                     "[LSTM] Adjusting input_size on already-trained model from %d "
                     "to %d (originally configured as %d). This will reinitialize "
