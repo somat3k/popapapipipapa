@@ -9,10 +9,11 @@ from .hyperparams import (  # noqa: F401
 )
 from .models import (  # noqa: F401
     BaseModel,
+    EquityHealthEnsembleModel,
     EnsembleModel,
     GradientBoostingModel,
     LinearRegressionModel,
-    LSTMModel,
+    NeuralNetworkModel,
     ModelRegistry,
     RandomForestModel,
 )

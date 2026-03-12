@@ -635,7 +635,18 @@ class MLPanel(DarkFrame):
         config_frame.pack(fill="x", padx=10, pady=4)
 
         fields = [
-            ("Model Type", "model_type", ["LinearRegression", "RandomForest", "GradientBoosting", "LSTM", "Ensemble"]),
+            (
+                "Model Type",
+                "model_type",
+                [
+                    "LinearRegression",
+                    "RandomForest",
+                    "GradientBoosting",
+                    "NeuralNetwork",
+                    "EquityHealthEnsemble",
+                    "Ensemble",
+                ],
+            ),
             ("HPO Method", "hpo", ["None", "RandomSearch", "BayesianOptimisation"]),
         ]
         self._config_vars: Dict[str, tk.StringVar] = {}
@@ -723,7 +734,11 @@ class MLPanel(DarkFrame):
 
     def _train_worker(self) -> None:
         from ..ml.models import (
-            GradientBoostingModel, LinearRegressionModel, RandomForestModel
+            EquityHealthEnsembleModel,
+            GradientBoostingModel,
+            LinearRegressionModel,
+            NeuralNetworkModel,
+            RandomForestModel,
         )
         from ..ml.trainer import Trainer
 
@@ -746,13 +761,23 @@ class MLPanel(DarkFrame):
             "LinearRegression": LinearRegressionModel,
             "RandomForest": RandomForestModel,
             "GradientBoosting": GradientBoostingModel,
+            "NeuralNetwork": NeuralNetworkModel,
+            # Default ensemble members for the equity/health-weighted option.
+            "EquityHealthEnsemble": lambda: EquityHealthEnsembleModel(
+                [
+                    LinearRegressionModel(),
+                    RandomForestModel(),
+                    GradientBoostingModel(),
+                    NeuralNetworkModel(),
+                ]
+            ),
         }
-        cls = model_map.get(model_type)
-        if cls is None:
+        factory = model_map.get(model_type)
+        if factory is None:
             self._log_msg(f"Model '{model_type}' not yet wired in this demo.")
             return
 
-        model = cls()
+        model = factory()
         self._log_msg(f"Training {model_type} for {epochs} epochs…")
 
         def on_progress(epoch: int, total: int, metrics: Dict[str, float]) -> None:

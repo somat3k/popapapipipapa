@@ -1,5 +1,5 @@
 """ML Models: BaseModel, LinearRegressionModel, RandomForestModel,
-GradientBoostingModel, LSTMModel, EnsembleModel."""
+GradientBoostingModel, NeuralNetworkModel, EnsembleModel, EquityHealthEnsembleModel."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 logger = logging.getLogger(__name__)
+_WEIGHT_EPSILON = 1e-12
 
 
 # ---------------------------------------------------------------------------
@@ -163,11 +164,11 @@ class RandomForestModel(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Gradient Boosting (sklearn wrapper)
+# Gradient Boosting (XGBoost wrapper)
 # ---------------------------------------------------------------------------
 
 class GradientBoostingModel(BaseModel):
-    """Thin wrapper around sklearn GradientBoostingRegressor."""
+    """Thin wrapper around xgboost.XGBRegressor."""
 
     def __init__(
         self,
@@ -184,13 +185,15 @@ class GradientBoostingModel(BaseModel):
         self._model: Any = None
 
     def fit(self, X: np.ndarray, y: np.ndarray, **kwargs: Any) -> "GradientBoostingModel":
-        from sklearn.ensemble import GradientBoostingRegressor  # lazy import
+        from xgboost import XGBRegressor  # lazy import
 
-        self._model = GradientBoostingRegressor(
+        self._model = XGBRegressor(
             n_estimators=self.n_estimators,
             learning_rate=self.learning_rate,
             max_depth=self.max_depth,
             random_state=self.random_state,
+            objective="reg:squarederror",
+            verbosity=0,
         )
         self._model.fit(X, y)
         self._trained = True
@@ -204,151 +207,64 @@ class GradientBoostingModel(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# LSTM Model (PyTorch)
+# Neural Network (scikit-learn MLP)
 # ---------------------------------------------------------------------------
 
-class LSTMModel(BaseModel):
-    """LSTM-based sequence model for time-series prediction."""
+class NeuralNetworkModel(BaseModel):
+    """MLP-based regression model using scikit-learn."""
 
     def __init__(
         self,
-        input_size: int = 10,
-        hidden_size: int = 64,
-        num_layers: int = 2,
-        learning_rate: float = 1e-3,
-        epochs: int = 50,
-        seq_len: int = 20,
-        auto_adjust_input_size: bool = True,
+        hidden_layer_sizes: Tuple[int, ...] = (64, 32),
+        activation: str = "relu",
+        learning_rate_init: float = 1e-3,
+        max_iter: int = 200,
+        random_state: int = 42,
+        early_stopping: bool = True,
     ) -> None:
-        super().__init__("LSTM")
-        self.input_size = input_size
-        self.configured_input_size = input_size
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.learning_rate = learning_rate
-        self.epochs = epochs
-        self.seq_len = seq_len
-        self.auto_adjust_input_size = auto_adjust_input_size
-        self._net: Any = None
-        self._train_losses: List[float] = []
+        super().__init__("NeuralNetwork")
+        self.hidden_layer_sizes = hidden_layer_sizes
+        self.activation = activation
+        self.learning_rate_init = learning_rate_init
+        self.max_iter = max_iter
+        self.random_state = random_state
+        self.early_stopping = early_stopping
+        self._model: Any = None
 
-    def _build_net(self) -> Any:
-        try:
-            import torch
-            import torch.nn as nn
-
-            class _Net(nn.Module):
-                def __init__(self, in_sz: int, hid: int, layers: int) -> None:
-                    super().__init__()
-                    self.lstm = nn.LSTM(in_sz, hid, layers, batch_first=True)
-                    self.fc = nn.Linear(hid, 1)
-
-                def forward(self, x: Any) -> Any:
-                    out, _ = self.lstm(x)
-                    return self.fc(out[:, -1, :]).squeeze(-1)
-
-            return _Net(self.input_size, self.hidden_size, self.num_layers)
-        except ImportError:
-            return None
-
-    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs: Any) -> "LSTMModel":
-        try:
-            import torch
-            import torch.nn as nn
-        except ImportError:
-            logger.warning("[LSTM] PyTorch not available. Falling back to identity.")
-            self._trained = True
-            return self
-
-        if X.ndim not in (2, 3):
-            raise ValueError(
-                "[LSTM] Expected 2D (samples, features) or 3D "
-                "(samples, sequence_length, features) input; 2D inputs are "
-                f"treated as single-step sequences. Got {X.ndim}D array with "
-                f"shape {X.shape}. Please reshape your input data."
-            )
-        if X.ndim == 3 and X.shape[1] != self.seq_len:
-            raise ValueError(
-                "[LSTM] Expected sequence_length "
-                f"{self.seq_len}, got {X.shape[1]}. "
-                "Please reshape your input data or update seq_len."
-            )
-        feature_dim = X.shape[-1]
-        if feature_dim != self.input_size:
-            if not self.auto_adjust_input_size:
-                raise ValueError(
-                    "[LSTM] input_size mismatch: "
-                    f"expected {self.input_size}, got {feature_dim}. "
-                    "Set auto_adjust_input_size=True to adjust automatically."
-                )
-            if self._net is not None:
-                logger.warning(
-                    "[LSTM] Adjusting input_size on already-trained model from %d "
-                    "to %d (originally configured as %d). This will reinitialize "
-                    "the network.",
-                    self.input_size,
-                    feature_dim,
-                    self.configured_input_size,
-                )
-            logger.info(
-                "[LSTM] Adjusting input_size from %d to %d to match features.",
-                self.input_size,
-                feature_dim,
-            )
-            self.input_size = feature_dim
-
-        net = self._build_net()
-        if net is None:
-            self._trained = True
-            return self
-
-        optimizer = torch.optim.Adam(net.parameters(), lr=self.learning_rate)
-        criterion = nn.MSELoss()
-
-        # Reshape X to (N, seq_len, input_size) if 2-D
+    def _reshape_features(self, X: np.ndarray) -> np.ndarray:
+        """Return a 2D feature matrix, flattening 3D sequences if needed."""
         if X.ndim == 2:
-            # Treat each row as a sequence of length 1 × features
-            X_t = torch.FloatTensor(X).unsqueeze(1)
-        else:
-            X_t = torch.FloatTensor(X)
-        y_t = torch.FloatTensor(y)
+            return X
+        if X.ndim == 3:
+            return X.reshape(X.shape[0], -1)
+        raise ValueError(
+            "[NeuralNetwork] Expected 2D (samples, features) or 3D "
+            "(samples, sequence_length, features) input. "
+            f"Got {X.ndim}D array with shape {X.shape}."
+        )
 
-        net.train()
-        for epoch in range(self.epochs):
-            optimizer.zero_grad()
-            preds = net(X_t)
-            loss = criterion(preds, y_t)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
-            optimizer.step()
-            self._train_losses.append(float(loss.item()))
-            if (epoch + 1) % 10 == 0:
-                logger.debug("[LSTM] Epoch %d/%d  loss=%.4f", epoch + 1, self.epochs, loss.item())
+    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs: Any) -> "NeuralNetworkModel":
+        from sklearn.neural_network import MLPRegressor  # lazy import
 
-        self._net = net
+        X_flat = self._reshape_features(X)
+        self._model = MLPRegressor(
+            hidden_layer_sizes=self.hidden_layer_sizes,
+            activation=self.activation,
+            learning_rate_init=self.learning_rate_init,
+            max_iter=self.max_iter,
+            random_state=self.random_state,
+            early_stopping=self.early_stopping,
+        )
+        self._model.fit(X_flat, y)
         self._trained = True
+        logger.info("[NeuralNetwork] Fitted layers=%s.", self.hidden_layer_sizes)
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        try:
-            import torch
-        except ImportError:
-            return np.zeros(len(X))
-
-        if self._net is None:
-            return np.zeros(len(X))
-
-        self._net.eval()
-        if X.ndim == 2:
-            X_t = torch.FloatTensor(X).unsqueeze(1)
-        else:
-            X_t = torch.FloatTensor(X)
-        with torch.no_grad():
-            return self._net(X_t).numpy()
-
-    @property
-    def train_losses(self) -> List[float]:
-        return list(self._train_losses)
+        if self._model is None:
+            raise RuntimeError("Model not trained.")
+        X_flat = self._reshape_features(X)
+        return self._model.predict(X_flat)
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +292,133 @@ class EnsembleModel(BaseModel):
             raise RuntimeError("No models in ensemble.")
         preds = np.array([m.predict(X) for m in self._models])
         return np.mean(preds, axis=0)
+
+
+# ---------------------------------------------------------------------------
+# Equity + Health Weighted Ensemble
+# ---------------------------------------------------------------------------
+
+class EquityHealthEnsembleModel(BaseModel):
+    """Ensemble that weights models by equity growth and health score."""
+
+    DEFAULT_RETURNS = np.zeros(1)
+    DEFAULT_HEALTH_FACTORS = np.full(1, 2.0)
+
+    def __init__(self, models: Optional[List[BaseModel]] = None) -> None:
+        super().__init__("EquityHealthEnsemble")
+        self._models: List[BaseModel] = models or []
+        self._weights: Optional[np.ndarray] = None
+
+    def add_model(self, model: BaseModel) -> None:
+        self._models.append(model)
+
+    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs: Any) -> "EquityHealthEnsembleModel":
+        for model in self._models:
+            model.fit(X, y, **kwargs)
+        self._trained = True
+        return self
+
+    def update_weights(
+        self,
+        returns: List[np.ndarray],
+        health_factors: List[np.ndarray],
+        periods_per_year: float = 252.0,
+    ) -> np.ndarray:
+        """Update model weights using equity growth and health factor scores.
+
+        Weights are proportional to max(CAGR, 0) × health_factor_score,
+        using ``periods_per_year`` for the CAGR calculation. Returns a
+        normalised weight vector aligned to the current model list.
+        """
+        if len(returns) != len(self._models) or len(health_factors) != len(self._models):
+            raise ValueError("Returns and health_factors must match number of models.")
+        if not self._models:
+            raise RuntimeError("No models in ensemble.")
+
+        from app.evaluation.metrics import AgentEvaluationMetrics
+
+        scores: List[float] = []
+        for model_returns, model_hf in zip(returns, health_factors):
+            resolved_returns = np.asarray(model_returns, dtype=float)
+            resolved_hf = np.asarray(model_hf, dtype=float)
+            returns_len = len(resolved_returns)
+            hf_len = len(resolved_hf)
+            aligned_len = min(returns_len, hf_len)
+            if aligned_len > 0:
+                if returns_len != hf_len:
+                    logger.warning(
+                        "[EquityHealthEnsemble] Truncating inputs from %d/%d to %d.",
+                        returns_len,
+                        hf_len,
+                        aligned_len,
+                    )
+                resolved_returns = resolved_returns[:aligned_len]
+                resolved_hf = resolved_hf[:aligned_len]
+            if resolved_returns.size == 0:
+                resolved_returns = self.DEFAULT_RETURNS.copy()
+            if resolved_hf.size == 0:
+                resolved_hf = self.DEFAULT_HEALTH_FACTORS.copy()
+            metrics = AgentEvaluationMetrics(
+                returns=resolved_returns,
+                health_factors=resolved_hf,
+            )
+            growth = max(0.0, metrics.cagr(periods_per_year))
+            health_score = max(0.0, metrics.health_factor_score())
+            scores.append(growth * health_score)
+
+        weights = self._normalize_weights(scores)
+        self._weights = weights
+        return weights
+
+    def update_weights_from_equity(
+        self,
+        equity_curves: List[np.ndarray],
+        health_factors: List[np.ndarray],
+        periods_per_year: float = 252.0,
+    ) -> np.ndarray:
+        """Convert equity curves to returns and delegate to ``update_weights``."""
+        returns = []
+        for equity in equity_curves:
+            eq = np.asarray(equity, dtype=float)
+            if len(eq) < 2:
+                returns.append(np.array([]))
+            else:
+                denom = eq[:-1]
+                # Avoid division by zero by returning 0.0 when the denominator is 0.
+                returns.append(
+                    np.divide(
+                        np.diff(eq),
+                        denom,
+                        out=np.zeros_like(denom),
+                        where=denom != 0,
+                    )
+                )
+        return self.update_weights(returns, health_factors, periods_per_year)
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        if not self._models:
+            raise RuntimeError("No models in ensemble.")
+        preds = np.array([m.predict(X) for m in self._models])
+        weights = self._resolve_weights()
+        return np.average(preds, axis=0, weights=weights)
+
+    def _resolve_weights(self) -> np.ndarray:
+        """Return user-defined weights or equal weights if unset."""
+        if self._weights is None or len(self._weights) != len(self._models):
+            return np.full(len(self._models), 1 / len(self._models))
+        return self._weights
+
+    @staticmethod
+    def _normalize_weights(raw: List[float]) -> np.ndarray:
+        """Normalise weights with equal-weight fallback on tiny or non-finite totals."""
+        values = np.array(raw, dtype=float)
+        if not np.all(np.isfinite(values)):
+            logger.warning("[EquityHealthEnsemble] Non-finite weight scores detected.")
+        values = np.where(np.isfinite(values), values, 0.0)
+        total = float(np.sum(values))
+        if not np.isfinite(total) or total <= _WEIGHT_EPSILON:
+            return np.full(len(values), 1 / len(values))
+        return values / total
 
 
 # ---------------------------------------------------------------------------
