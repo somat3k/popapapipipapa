@@ -222,12 +222,14 @@ class LSTMModel(BaseModel):
     ) -> None:
         super().__init__("LSTM")
         self.input_size = input_size
+        self.initial_input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.learning_rate = learning_rate
         self.epochs = epochs
         self.seq_len = seq_len
         self.auto_adjust_input_size = auto_adjust_input_size
+        self._input_size_adjusted = False
         self._net: Any = None
         self._train_losses: List[float] = []
 
@@ -262,12 +264,20 @@ class LSTMModel(BaseModel):
         feature_dim = X.shape[-1] if X.ndim >= 2 else 1
         if feature_dim != self.input_size:
             if self.auto_adjust_input_size:
+                if self._trained or self._input_size_adjusted:
+                    logger.warning(
+                        "[LSTM] input_size changed from %d to %d; original was %d.",
+                        self.input_size,
+                        feature_dim,
+                        self.initial_input_size,
+                    )
                 logger.info(
                     "[LSTM] Adjusting input_size from %d to %d to match features.",
                     self.input_size,
                     feature_dim,
                 )
                 self.input_size = feature_dim
+                self._input_size_adjusted = True
             else:
                 raise ValueError(
                     "[LSTM] input_size mismatch: "
