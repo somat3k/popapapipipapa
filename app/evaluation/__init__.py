@@ -12,6 +12,9 @@ metrics
 rl_pipeline
     Reinforcement-learning feedback pipeline built on supervised learning:
     pre-train → episode → reward → replay → retrain.
+realtime_inference
+    Realtime bar-by-bar inference runner: streams bars through a trained
+    model and exchanges inference payloads with agents via the MessageBus.
 defi_strategy
     1/2=3 DeFi account growth strategy and health-factor management.
 """
@@ -37,6 +40,12 @@ from app.evaluation.rl_pipeline import (
     RLEnvironment,
     RLPipeline,
     SupervisedRLAgent,
+)
+from app.evaluation.realtime_inference import (
+    INFERENCE_TOPIC,
+    InferencePayload,
+    InferenceSummary,
+    RealtimeInferenceRunner,
 )
 from app.evaluation.defi_strategy import (
     HalfHalfThreeStrategy,
@@ -70,6 +79,11 @@ __all__ = [
     "RLEnvironment",
     "RLPipeline",
     "SupervisedRLAgent",
+    # realtime_inference
+    "INFERENCE_TOPIC",
+    "InferencePayload",
+    "InferenceSummary",
+    "RealtimeInferenceRunner",
     # defi_strategy
     "HalfHalfThreeStrategy",
     "HealthFactorManager",

@@ -16,6 +16,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 from .base_agent import AgentContext, AgentState, BaseAgent, MessageBus, ToolRegistry
+from app.evaluation.realtime_inference import INFERENCE_TOPIC, RealtimeInferenceRunner
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,9 @@ class TradingAgent(BaseAgent):
     ) -> None:
         super().__init__(name="TradingAgent", **kwargs)
         self._signals: List[Dict[str, Any]] = []
+        self._inference_payloads: List[Dict[str, Any]] = []
         self.symbols = symbols or ["ETH", "BTC", "MATIC"]
+        self.bus.subscribe(INFERENCE_TOPIC, self._on_inference_payload)
 
     def _execute(self) -> None:
         logger.info("[TradingAgent] Starting trading loop.")
@@ -92,6 +95,42 @@ class TradingAgent(BaseAgent):
 
     def get_signals(self) -> List[Dict[str, Any]]:
         return list(self._signals)
+
+    def stop(self) -> None:
+        """Stop the agent and unsubscribe from the inference topic."""
+        try:
+            self.bus.unsubscribe(INFERENCE_TOPIC, self._on_inference_payload)
+        except Exception:
+            logger.exception("[TradingAgent] Failed to unsubscribe from inference topic.")
+        super().stop()
+
+    def _on_inference_payload(self, payload: Dict[str, Any]) -> None:
+        """Handle an incoming ML inference payload from the message bus.
+
+        Stores the payload and auto-generates a trading signal when the
+        predicted action is non-zero (buy or sell).
+        """
+        if not isinstance(payload, dict):
+            logger.warning(
+                "[TradingAgent] Ignoring non-dict inference payload: %r", payload
+            )
+            return
+        self._inference_payloads.append(payload)
+        action = payload.get("action", 0)
+        if action != 0:
+            signal = {
+                "symbol": payload.get("symbol", ""),
+                "direction": action,
+                "confidence": payload.get("confidence", 0.0),
+                "source": "ml.inference",
+                "ts": payload.get("timestamp", time.time()),
+            }
+            self._signals.append(signal)
+            self.bus.publish("trading.signal", signal)
+
+    def get_inference_payloads(self) -> List[Dict[str, Any]]:
+        """Return all inference payloads received from the ML inference stream."""
+        return list(self._inference_payloads)
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +262,60 @@ class MLAgent(BaseAgent):
         if self._active_model is None:
             raise RuntimeError("No active model loaded.")
         return self._active_model.predict(features)
+
+    def run_inference_stream(
+        self,
+        bars: List[Any],
+        symbol: str = "",
+        model: Optional[Any] = None,
+        topic: str = INFERENCE_TOPIC,
+    ) -> Dict[str, Any]:
+        """Run bar-by-bar realtime inference and exchange payloads via the MessageBus.
+
+        Uses the :class:`~app.evaluation.realtime_inference.RealtimeInferenceRunner`
+        to iterate through *bars* one at a time, run model inference for each bar,
+        and publish each :class:`~app.evaluation.realtime_inference.InferencePayload`
+        to the message bus under *topic*.
+
+        Parameters
+        ----------
+        bars:
+            OHLCV :class:`~app.trading.algorithms.Bar` objects to stream through.
+        symbol:
+            Asset symbol label attached to every published payload.
+        model:
+            Optional model override.  Defaults to the agent's active model.
+        topic:
+            Message bus topic for inference payloads.
+
+        Returns
+        -------
+        dict
+            Summary counts and timing (see :class:`~app.evaluation.realtime_inference.InferenceSummary`).
+
+        Raises
+        ------
+        RuntimeError
+            If no model is active and none is provided.
+        """
+        active_model = model or self._active_model
+        if active_model is None:
+            raise RuntimeError(
+                "[MLAgent] No active model loaded. "
+                "Call set_model() or pass a model to run_inference_stream()."
+            )
+        runner = RealtimeInferenceRunner(
+            model=active_model,
+            bars=bars,
+            symbol=symbol,
+            topic=topic,
+            message_bus=self.bus,
+        )
+        summary = runner.run()
+        summary_dict = summary.to_dict()
+        self.bus.publish("ml.inference.summary", {"agent": self.name, **summary_dict})
+        logger.info("[MLAgent] Inference stream complete: %s", summary_dict)
+        return summary_dict
 
 
 # ---------------------------------------------------------------------------
